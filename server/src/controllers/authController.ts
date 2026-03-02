@@ -1,0 +1,166 @@
+import { Request, Response } from 'express'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { RowDataPacket, ResultSetHeader } from 'mysql2'
+import pool from '../config/db'
+
+// ─── helpers ───────────────────────────────────────────────
+
+const sanitize = (str: string) => str.trim().replace(/[<>"']/g, '')
+
+// ─── REGISTER ──────────────────────────────────────────────
+
+export const register = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const {
+      fullname,
+      username,
+      email,
+      password,
+      confirmPassword,
+      role,
+    } = req.body
+
+    // ── basic presence
+    if (!fullname || !username || !email || !password || !confirmPassword || !role) {
+      res.status(400).json({ success: false, message: 'All fields are required.' })
+      return
+    }
+
+    // ── sanctioned roles
+    if (!['attorney', 'client'].includes(role)) {
+      res.status(400).json({ success: false, message: 'Invalid role.' })
+      return
+    }
+
+    // ── email format
+    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRx.test(email)) {
+      res.status(400).json({ success: false, message: 'Invalid email format.' })
+      return
+    }
+
+    // ── password match
+    if (password !== confirmPassword) {
+      res.status(400).json({ success: false, message: 'Passwords do not match.' })
+      return
+    }
+
+    // ── password strength
+    if (password.length < 8) {
+      res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' })
+      return
+    }
+
+    const cleanName     = sanitize(fullname)
+    const cleanUsername = sanitize(username)
+    const cleanEmail    = sanitize(email)
+
+    // ── uniqueness check (prepared statement → no SQL injection)
+    const [existing] = await pool.execute<RowDataPacket[]>(
+      'SELECT id FROM users WHERE username = ? OR email = ?',
+      [cleanUsername, cleanEmail]
+    )
+
+    if (existing.length > 0) {
+      res.status(409).json({ success: false, message: 'Username or email already taken.' })
+      return
+    }
+
+    // ── hash
+    const hashed = await bcrypt.hash(password, 12)
+
+    // ── insert
+    const [result] = await pool.execute<ResultSetHeader>(
+      'INSERT INTO users (fullname, username, email, password, role) VALUES (?, ?, ?, ?, ?)',
+      [cleanName, cleanUsername, cleanEmail, hashed, role]
+    )
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful! You can now log in.',
+      userId: result.insertId,
+    })
+  } catch (err) {
+    console.error('[register]', err)
+    res.status(500).json({ success: false, message: 'Server error. Please try again.' })
+  }
+}
+
+// ─── LOGIN ─────────────────────────────────────────────────
+
+export const login = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { identifier, password } = req.body   // identifier = username OR email
+
+    if (!identifier || !password) {
+      res.status(400).json({ success: false, message: 'Username/email and password are required.' })
+      return
+    }
+
+    const clean = sanitize(identifier)
+
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT * FROM users WHERE username = ? OR email = ?',
+      [clean, clean]
+    )
+
+    if (rows.length === 0) {
+      res.status(401).json({ success: false, message: 'Invalid credentials.' })
+      return
+    }
+
+    const user = rows[0]
+    const match = await bcrypt.compare(password, user.password)
+
+    if (!match) {
+      res.status(401).json({ success: false, message: 'Invalid credentials.' })
+      return
+    }
+
+    // ── sign JWT
+    const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      process.env.JWT_SECRET as string,
+      { expiresIn }
+    )
+
+    res.json({
+      success: true,
+      message: 'Login successful.',
+      token,
+      user: {
+        id: user.id,
+        fullname: user.fullname,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+    })
+  } catch (err) {
+    console.error('[login]', err)
+    res.status(500).json({ success: false, message: 'Server error. Please try again.' })
+  }
+}
+
+// ─── GET CURRENT USER ──────────────────────────────────────
+
+export const getMe = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      'SELECT id, fullname, username, email, role, created_at FROM users WHERE id = ?',
+      [req.user!.id]
+    )
+
+    if (rows.length === 0) {
+      res.status(404).json({ success: false, message: 'User not found.' })
+      return
+    }
+
+    res.json({ success: true, user: rows[0] })
+  } catch (err) {
+    console.error('[getMe]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
