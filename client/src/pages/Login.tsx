@@ -142,6 +142,12 @@ export default function Login() {
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? <><div className="spinner"/> Signing in…</> : <><LogIn size={16}/> Sign In</>}
           </button>
+
+          <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
+            <Link to="/forgot-password" style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              Forgot your password?
+            </Link>
+          </div>
         </form>
 
         <div className="auth-footer">

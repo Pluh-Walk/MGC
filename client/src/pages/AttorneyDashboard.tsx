@@ -1,9 +1,12 @@
-import { Scale, FileText, Users, Calendar, MessageSquare, Briefcase } from 'lucide-react'
+import { Scale, FileText, Users, Calendar, MessageSquare, Briefcase, Megaphone } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
+import NotificationBell from '../components/NotificationBell'
 
 export default function AttorneyDashboard() {
   const { user } = useAuth()
+  const navigate = useNavigate()
 
   const initials = user?.fullname
     .split(' ')
@@ -22,6 +25,7 @@ export default function AttorneyDashboard() {
         </div>
         <div className="dash-nav-right">
           <span className="role-badge attorney">Attorney</span>
+          <NotificationBell />
           <SettingsDropdown />
         </div>
       </nav>
@@ -44,30 +48,35 @@ export default function AttorneyDashboard() {
 
         {/* Cards */}
         <div className="dash-grid">
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/cases')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-gold"><Briefcase size={20}/></div>
             <h3>My Cases</h3>
             <p>View and manage all active and archived legal cases assigned to you.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/clients')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-blue"><Users size={20}/></div>
             <h3>Clients</h3>
             <p>Access your client roster, contact details, and case history.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/hearings')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-green"><Calendar size={20}/></div>
-            <h3>Calendar & Hearings</h3>
+            <h3>Calendar &amp; Hearings</h3>
             <p>Schedule and track court hearings, meetings, and deadlines.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/cases')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-blue"><FileText size={20}/></div>
             <h3>Documents</h3>
             <p>Upload, review, and manage legal documents and filings.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/messages')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-purple"><MessageSquare size={20}/></div>
             <h3>Messages</h3>
             <p>Communicate securely with clients and colleagues.</p>
+          </div>
+          <div className="dash-card" onClick={() => navigate('/announcements')} style={{ cursor: 'pointer' }}>
+            <div className="dash-card-icon icon-gold"><Megaphone size={20}/></div>
+            <h3>Announcements</h3>
+            <p>Post firm-wide or case-specific notices for your clients.</p>
           </div>
         </div>
       </main>

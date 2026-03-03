@@ -1,0 +1,12 @@
+{
+  "typescript.tsserver.watchOptions": {
+    "excludeDirectories": ["**/node_modules"]
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true
+  }
+}

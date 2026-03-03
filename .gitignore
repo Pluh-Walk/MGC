@@ -1,4 +1,26 @@
+# Dependencies
 node_modules/
-dist/
+client/node_modules/
+server/node_modules/
+
+# Environment variables — NEVER commit
 .env
 .env.local
+.env.*.local
+server/.env
+
+# Build outputs
+client/dist/
+server/dist/
+dist/
+
+# Uploads (user files)
+server/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

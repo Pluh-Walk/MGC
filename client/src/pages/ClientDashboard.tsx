@@ -1,9 +1,12 @@
-import { Scale, FileText, Clock, MessageSquare, HelpCircle, FolderOpen } from 'lucide-react'
+import { Scale, FileText, Clock, MessageSquare, HelpCircle, FolderOpen, Megaphone } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
+import NotificationBell from '../components/NotificationBell'
 
 export default function ClientDashboard() {
   const { user } = useAuth()
+  const navigate = useNavigate()
 
   const initials = user?.fullname
     .split(' ')
@@ -22,6 +25,7 @@ export default function ClientDashboard() {
         </div>
         <div className="dash-nav-right">
           <span className="role-badge client">Client</span>
+          <NotificationBell />
           <SettingsDropdown />
         </div>
       </nav>
@@ -44,27 +48,32 @@ export default function ClientDashboard() {
 
         {/* Cards */}
         <div className="dash-grid">
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/cases')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-blue"><FolderOpen size={20}/></div>
             <h3>My Cases</h3>
             <p>View the status and progress of your active and past legal cases.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/cases')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-gold"><FileText size={20}/></div>
             <h3>Documents</h3>
             <p>Access legal documents and filings related to your cases.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/hearings')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-green"><Clock size={20}/></div>
             <h3>Appointments</h3>
             <p>View and confirm upcoming meetings and court hearing schedules.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/messages')} style={{ cursor: 'pointer' }}>
             <div className="dash-card-icon icon-purple"><MessageSquare size={20}/></div>
             <h3>Messages</h3>
             <p>Send and receive messages from your assigned attorney.</p>
           </div>
-          <div className="dash-card">
+          <div className="dash-card" onClick={() => navigate('/announcements')} style={{ cursor: 'pointer' }}>
+            <div className="dash-card-icon icon-gold"><Megaphone size={20}/></div>
+            <h3>Announcements</h3>
+            <p>View firm notices and updates from your attorney.</p>
+          </div>
+          <div className="dash-card" style={{ cursor: 'not-allowed', opacity: 0.7 }}>
             <div className="dash-card-icon icon-blue"><HelpCircle size={20}/></div>
             <h3>Support</h3>
             <p>Get help and submit inquiries to the MGC support team.</p>

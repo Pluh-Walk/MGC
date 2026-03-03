@@ -121,7 +121,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // ── sign JWT
     const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
+      { id: user.id, fullname: user.fullname, username: user.username, role: user.role },
       process.env.JWT_SECRET as string,
       { expiresIn }
     )

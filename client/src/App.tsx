@@ -7,6 +7,14 @@ import Register from './pages/Register'
 import AttorneyDashboard from './pages/AttorneyDashboard'
 import ClientDashboard from './pages/ClientDashboard'
 import Profile from './pages/Profile'
+import Cases from './pages/Cases'
+import CaseDetail from './pages/CaseDetail'
+import Clients from './pages/Clients'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
+import Hearings from './pages/Hearings'
+import Announcements from './pages/Announcements'
+import Messages from './pages/Messages'
 
 function App() {
   return (
@@ -17,8 +25,10 @@ function App() {
           <Route path="/" element={<Landing />} />
 
           {/* Public */}
-          <Route path="/login"    element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/login"            element={<Login />} />
+          <Route path="/register"         element={<Register />} />
+          <Route path="/forgot-password"  element={<ForgotPassword />} />
+          <Route path="/reset-password"   element={<ResetPassword />} />
 
           {/* Protected — Attorney only */}
           <Route
@@ -26,6 +36,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['attorney']}>
                 <AttorneyDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <ProtectedRoute allowedRoles={['attorney']}>
+                <Clients />
               </ProtectedRoute>
             }
           />
@@ -40,7 +58,47 @@ function App() {
             }
           />
 
-          {/* Profile — any authenticated role */}
+          {/* Protected — Both roles */}
+          <Route
+            path="/cases"
+            element={
+              <ProtectedRoute>
+                <Cases />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/cases/:id"
+            element={
+              <ProtectedRoute>
+                <CaseDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/hearings"
+            element={
+              <ProtectedRoute>
+                <Hearings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/announcements"
+            element={
+              <ProtectedRoute>
+                <Announcements />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/messages"
+            element={
+              <ProtectedRoute>
+                <Messages />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/profile"
             element={
