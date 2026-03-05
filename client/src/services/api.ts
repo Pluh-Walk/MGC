@@ -44,6 +44,17 @@ export const profileApi = {
   updateMe: (data: object) => api.put('/profile/me', data),
   getClient: (id: number) => api.get(`/profile/clients/${id}`),
   updateClient: (id: number, data: object) => api.put(`/profile/clients/${id}`, data),
+  // Attorney-specific
+  stats:      () => api.get('/profile/attorney/stats'),
+  activity:   () => api.get('/profile/attorney/activity'),
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    api.put('/profile/password', data),
+  uploadPhoto: (file: File) => {
+    const fd = new FormData()
+    fd.append('photo', file)
+    return api.post('/profile/photo', fd, { headers: { 'Content-Type': undefined } })
+  },
+  photoUrl: (userId: number) => `/api/profile/photo/${userId}`,
 }
 
 // ─── Documents ────────────────────────────────────────────

@@ -25,6 +25,13 @@ export interface User {
 export const authService = {
   register: (data: RegisterData) => api.post('/auth/register', data),
 
+  verifyIBP: (userId: number, file: File) => {
+    const fd = new FormData()
+    fd.append('userId', String(userId))
+    fd.append('ibp_card', file)
+    return api.post('/auth/verify-ibp', fd, { headers: { 'Content-Type': undefined } })
+  },
+
   login: async (data: LoginData) => {
     const res = await api.post('/auth/login', data)
     if (res.data.success) {

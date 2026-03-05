@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Scale,
@@ -11,6 +11,11 @@ import {
   AlertCircle,
   CheckCircle2,
   ShieldCheck,
+  Upload,
+  Loader2,
+  ScanLine,
+  BadgeCheck,
+  RotateCcw,
 } from 'lucide-react'
 import { authService, RegisterData } from '../services/authService'
 
@@ -23,9 +28,12 @@ const EMPTY: RegisterData = {
   role: 'client',
 }
 
+type Step = 'form' | 'ibp-verify'
+
 export default function Register() {
   const navigate = useNavigate()
 
+  // ── Registration form state ───────────────────────────
   const [form, setForm] = useState<RegisterData>(EMPTY)
   const [showPw, setShowPw] = useState(false)
   const [showCPw, setShowCPw] = useState(false)
@@ -33,6 +41,16 @@ export default function Register() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof RegisterData, string>>>({})
+
+  // ── IBP verification state ────────────────────────────
+  const [step, setStep] = useState<Step>('form')
+  const [registeredUserId, setRegisteredUserId] = useState<number | null>(null)
+  const [ibpFile, setIbpFile] = useState<File | null>(null)
+  const [ibpPreview, setIbpPreview] = useState<string | null>(null)
+  const [ibpLoading, setIbpLoading] = useState(false)
+  const [ibpError, setIbpError] = useState('')
+  const [ibpDone, setIbpDone] = useState(false)
+  const ibpRef = useRef<HTMLInputElement>(null)
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof RegisterData, string>> = {}
@@ -64,9 +82,14 @@ export default function Register() {
 
     setLoading(true)
     try {
-      await authService.register(form)
-      setSuccess('Account created! Redirecting to login…')
-      setTimeout(() => navigate('/login'), 1500)
+      const res = await authService.register(form)
+      if (form.role === 'attorney') {
+        setRegisteredUserId(res.data.userId)
+        setStep('ibp-verify')
+      } else {
+        setSuccess('Account created! Redirecting to login…')
+        setTimeout(() => navigate('/login'), 1500)
+      }
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
@@ -77,6 +100,43 @@ export default function Register() {
     }
   }
 
+  // ── IBP handlers ─────────────────────────────────────
+  const handleIbpFile = (file: File) => {
+    setIbpFile(file)
+    setIbpError('')
+    setIbpPreview(URL.createObjectURL(file))
+  }
+
+  const handleIbpInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleIbpFile(file)
+    e.target.value = ''
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleIbpFile(file)
+  }
+
+  const handleScan = async () => {
+    if (!ibpFile || !registeredUserId) return
+    setIbpLoading(true)
+    setIbpError('')
+    try {
+      await authService.verifyIBP(registeredUserId, ibpFile)
+      setIbpDone(true)
+      setTimeout(() => navigate('/login'), 2500)
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Verification failed. Please try again.'
+      setIbpError(msg)
+    } finally {
+      setIbpLoading(false)
+    }
+  }
+
   const field = (key: keyof RegisterData) => ({
     value: form[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -84,6 +144,102 @@ export default function Register() {
     className: fieldErrors[key] ? 'invalid' : '',
   })
 
+  // ── IBP Verification Step ────────────────────────────
+  if (step === 'ibp-verify') {
+    return (
+      <div className="auth-page">
+        <div className="auth-card ibp-card">
+          <div className="auth-logo">
+            <div className="auth-logo-icon"><Scale size={26} /></div>
+            <h1>MGC Law</h1>
+            <p>Attorney Verification</p>
+          </div>
+
+          {ibpDone ? (
+            <div className="ibp-success">
+              <div className="ibp-success-icon"><CheckCircle2 size={52} /></div>
+              <h3>Verification Successful!</h3>
+              <p>Your IBP card has been verified. Redirecting to login…</p>
+            </div>
+          ) : (
+            <>
+              <div className="ibp-header">
+                <BadgeCheck size={22} className="ibp-header-icon" />
+                <div>
+                  <h2>IBP Card Verification</h2>
+                  <p className="subtitle">Upload a clear photo of your Integrated Bar of the Philippines (IBP) card. The system will scan it automatically.</p>
+                </div>
+              </div>
+
+              {ibpError && (
+                <div className="alert alert-error">
+                  <AlertCircle size={16} /> {ibpError}
+                </div>
+              )}
+
+              {/* Drop zone */}
+              <div
+                className={`ibp-dropzone${ibpPreview ? ' has-preview' : ''}`}
+                onClick={() => ibpRef.current?.click()}
+                onDrop={handleDrop}
+                onDragOver={e => e.preventDefault()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && ibpRef.current?.click()}
+              >
+                <input
+                  ref={ibpRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handleIbpInput}
+                />
+                {ibpPreview ? (
+                  <img src={ibpPreview} alt="IBP card preview" className="ibp-preview-img" />
+                ) : (
+                  <div className="ibp-dropzone-placeholder">
+                    <Upload size={32} className="ibp-upload-icon" />
+                    <span>Click or drag & drop your IBP card here</span>
+                    <small>JPEG, PNG, or WebP · Max 10 MB</small>
+                  </div>
+                )}
+              </div>
+
+              {ibpPreview && !ibpDone && (
+                <button
+                  className="ibp-retake"
+                  onClick={() => { setIbpFile(null); setIbpPreview(null); setIbpError('') }}
+                >
+                  <RotateCcw size={13} /> Use a different image
+                </button>
+              )}
+
+              <button
+                className="btn-primary ibp-scan-btn"
+                onClick={handleScan}
+                disabled={!ibpFile || ibpLoading}
+              >
+                {ibpLoading ? (
+                  <><Loader2 size={16} className="spin" /> Scanning card…</>
+                ) : (
+                  <><ScanLine size={16} /> Scan & Verify</>
+                )}
+              </button>
+            </>
+          )}
+
+          {!ibpDone && (
+            <div className="auth-footer">
+              Already have an account?
+              <Link to="/login">Sign in</Link>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Registration Form Step ───────────────────────────
   return (
     <div className="auth-page">
       <div className="auth-card" style={{ maxWidth: 500 }}>
@@ -146,6 +302,13 @@ export default function Register() {
             </div>
             {fieldErrors.role && <p className="field-error"><AlertCircle size={12}/> {fieldErrors.role}</p>}
           </div>
+
+          {form.role === 'attorney' && (
+            <div className="ibp-notice">
+              <BadgeCheck size={15} />
+              <span>Attorney accounts require IBP card verification after registration.</span>
+            </div>
+          )}
 
           {/* Password */}
           <div className="form-group">

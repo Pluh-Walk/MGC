@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
+import Tesseract from 'tesseract.js'
 import pool from '../config/db'
 
 // ─── helpers ───────────────────────────────────────────────
@@ -141,6 +142,52 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     console.error('[login]', err)
     res.status(500).json({ success: false, message: 'Server error. Please try again.' })
+  }
+}
+
+// ─── VERIFY IBP CARD ──────────────────────────────────────
+
+export const verifyIBP = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.body
+    const file = req.file
+
+    if (!userId || !file) {
+      res.status(400).json({ success: false, message: 'User ID and IBP card image are required.' })
+      return
+    }
+
+    // ── Run Tesseract OCR on the uploaded image buffer
+    const { data: { text } } = await Tesseract.recognize(file.buffer, 'eng', {
+      logger: () => {}, // suppress progress logs
+    })
+
+    const upper = text.toUpperCase()
+
+    // Keywords expected on an IBP card
+    const keywords = ['INTEGRATED', 'BAR', 'PHILIPPINES', 'IBP', 'MEMBER', 'ROLL', 'PTR']
+    const matched = keywords.filter(k => upper.includes(k))
+
+    if (matched.length < 2) {
+      res.status(422).json({
+        success: false,
+        message:
+          'Could not verify IBP card. Please ensure the image is clear and fully shows your IBP card.',
+        debug_matched: matched,
+      })
+      return
+    }
+
+    // ── Mark user as IBP-verified
+    await pool.execute(
+      'UPDATE users SET ibp_verified = 1 WHERE id = ? AND role = ?',
+      [Number(userId), 'attorney']
+    )
+
+    res.json({ success: true, message: 'IBP card verified! You may now log in.' })
+  } catch (err) {
+    console.error('[verifyIBP]', err)
+    res.status(500).json({ success: false, message: 'OCR processing failed. Please try again.' })
   }
 }
 
