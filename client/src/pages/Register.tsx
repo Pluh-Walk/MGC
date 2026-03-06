@@ -28,7 +28,7 @@ const EMPTY: RegisterData = {
   role: 'client',
 }
 
-type Step = 'form' | 'ibp-verify'
+type Step = 'form' | 'ibp-verify' | 'id-verify'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -87,8 +87,9 @@ export default function Register() {
         setRegisteredUserId(res.data.userId)
         setStep('ibp-verify')
       } else {
-        setSuccess('Account created! Redirecting to login…')
-        setTimeout(() => navigate('/login'), 1500)
+        // Client — require government ID verification
+        setRegisteredUserId(res.data.userId)
+        setStep('id-verify')
       }
     } catch (err: unknown) {
       const msg =
@@ -134,6 +135,50 @@ export default function Register() {
       setIbpError(msg)
     } finally {
       setIbpLoading(false)
+    }
+  }
+
+  // ── Client ID handlers ────────────────────────────────
+  const [clientIdFile, setClientIdFile] = useState<File | null>(null)
+  const [clientIdPreview, setClientIdPreview] = useState<string | null>(null)
+  const [clientIdLoading, setClientIdLoading] = useState(false)
+  const [clientIdError, setClientIdError] = useState('')
+  const [clientIdDone, setClientIdDone] = useState(false)
+  const clientIdRef = useRef<HTMLInputElement>(null)
+
+  const handleClientIdFile = (file: File) => {
+    setClientIdFile(file)
+    setClientIdError('')
+    setClientIdPreview(URL.createObjectURL(file))
+  }
+
+  const handleClientIdInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleClientIdFile(file)
+    e.target.value = ''
+  }
+
+  const handleClientIdDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleClientIdFile(file)
+  }
+
+  const handleClientIdScan = async () => {
+    if (!clientIdFile || !registeredUserId) return
+    setClientIdLoading(true)
+    setClientIdError('')
+    try {
+      await authService.verifyClientID(registeredUserId, clientIdFile)
+      setClientIdDone(true)
+      setTimeout(() => navigate('/login'), 2500)
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Verification failed. Please try again.'
+      setClientIdError(msg)
+    } finally {
+      setClientIdLoading(false)
     }
   }
 
@@ -239,6 +284,101 @@ export default function Register() {
     )
   }
 
+  // ── Client ID Verification Step ─────────────────────
+  if (step === 'id-verify') {
+    return (
+      <div className="auth-page">
+        <div className="auth-card ibp-card">
+          <div className="auth-logo">
+            <div className="auth-logo-icon"><Scale size={26} /></div>
+            <h1>MGC Law</h1>
+            <p>Client Verification</p>
+          </div>
+
+          {clientIdDone ? (
+            <div className="ibp-success">
+              <div className="ibp-success-icon"><CheckCircle2 size={52} /></div>
+              <h3>Verification Successful!</h3>
+              <p>Your ID has been verified. Redirecting to login…</p>
+            </div>
+          ) : (
+            <>
+              <div className="ibp-header">
+                <BadgeCheck size={22} className="ibp-header-icon" />
+                <div>
+                  <h2>Government ID Verification</h2>
+                  <p className="subtitle">Upload a clear photo of a valid government-issued ID (e.g. PhilSys, Driver's License, Passport, UMID, Voter's ID). The system will scan it automatically.</p>
+                </div>
+              </div>
+
+              {clientIdError && (
+                <div className="alert alert-error">
+                  <AlertCircle size={16} /> {clientIdError}
+                </div>
+              )}
+
+              {/* Drop zone */}
+              <div
+                className={`ibp-dropzone${clientIdPreview ? ' has-preview' : ''}`}
+                onClick={() => clientIdRef.current?.click()}
+                onDrop={handleClientIdDrop}
+                onDragOver={e => e.preventDefault()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && clientIdRef.current?.click()}
+              >
+                <input
+                  ref={clientIdRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handleClientIdInput}
+                />
+                {clientIdPreview ? (
+                  <img src={clientIdPreview} alt="ID preview" className="ibp-preview-img" />
+                ) : (
+                  <div className="ibp-dropzone-placeholder">
+                    <Upload size={32} className="ibp-upload-icon" />
+                    <span>Click or drag & drop your ID here</span>
+                    <small>JPEG, PNG, or WebP · Max 10 MB</small>
+                  </div>
+                )}
+              </div>
+
+              {clientIdPreview && !clientIdDone && (
+                <button
+                  className="ibp-retake"
+                  onClick={() => { setClientIdFile(null); setClientIdPreview(null); setClientIdError('') }}
+                >
+                  <RotateCcw size={13} /> Use a different image
+                </button>
+              )}
+
+              <button
+                className="btn-primary ibp-scan-btn"
+                onClick={handleClientIdScan}
+                disabled={!clientIdFile || clientIdLoading}
+              >
+                {clientIdLoading ? (
+                  <><Loader2 size={16} className="spin" /> Scanning ID…</>
+                ) : (
+                  <><ScanLine size={16} /> Scan & Verify</>
+                )}
+              </button>
+            </>
+          )}
+
+          {!clientIdDone && (
+            <div className="auth-footer">
+              Already have an account?
+              <Link to="/login">Sign in</Link>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // ── Registration Form Step ───────────────────────────
   return (
     <div className="auth-page">
@@ -307,6 +447,13 @@ export default function Register() {
             <div className="ibp-notice">
               <BadgeCheck size={15} />
               <span>Attorney accounts require IBP card verification after registration.</span>
+            </div>
+          )}
+
+          {form.role === 'client' && (
+            <div className="ibp-notice">
+              <BadgeCheck size={15} />
+              <span>Client accounts require a valid government-issued ID for verification after registration.</span>
             </div>
           )}
 

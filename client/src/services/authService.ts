@@ -32,6 +32,13 @@ export const authService = {
     return api.post('/auth/verify-ibp', fd, { headers: { 'Content-Type': undefined } })
   },
 
+  verifyClientID: (userId: number, file: File) => {
+    const fd = new FormData()
+    fd.append('userId', String(userId))
+    fd.append('id_image', file)
+    return api.post('/auth/verify-client-id', fd, { headers: { 'Content-Type': undefined } })
+  },
+
   login: async (data: LoginData) => {
     const res = await api.post('/auth/login', data)
     if (res.data.success) {

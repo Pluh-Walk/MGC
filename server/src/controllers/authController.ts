@@ -119,6 +119,23 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    // ── Enforce verification gates
+    if (user.role === 'attorney' && !user.ibp_verified) {
+      res.status(403).json({
+        success: false,
+        message: 'Your account is pending IBP card verification. Please complete verification to log in.',
+      })
+      return
+    }
+
+    if (user.role === 'client' && !user.id_verified) {
+      res.status(403).json({
+        success: false,
+        message: 'Your account is pending ID verification. Please complete verification to log in.',
+      })
+      return
+    }
+
     // ── sign JWT
     const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
     const token = jwt.sign(
@@ -188,6 +205,76 @@ export const verifyIBP = async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     console.error('[verifyIBP]', err)
     res.status(500).json({ success: false, message: 'OCR processing failed. Please try again.' })
+  }
+}
+
+// ─── VERIFY CLIENT GOVERNMENT ID ──────────────────────────
+
+export const verifyClientID = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.body
+    const file = req.file
+
+    if (!userId || !file) {
+      res.status(400).json({ success: false, message: 'User ID and ID image are required.' })
+      return
+    }
+
+    // ── Run Tesseract OCR on the uploaded image buffer
+    const { data: { text } } = await Tesseract.recognize(file.buffer, 'eng', {
+      logger: () => {}, // suppress progress logs
+    })
+
+    const upper = text.toUpperCase()
+
+    // Keywords found on Philippine government-issued IDs
+    const keywords = [
+      'REPUBLIC OF THE PHILIPPINES',
+      'PHILIPPINES',
+      'DRIVER',
+      'LICENSE',
+      'PASSPORT',
+      'UMID',
+      'UNIFIED MULTI-PURPOSE',
+      'SSS',
+      'SOCIAL SECURITY',
+      'PHILHEALTH',
+      'PAG-IBIG',
+      'HDMF',
+      'VOTER',
+      'POSTAL',
+      'SENIOR CITIZEN',
+      'PROFESSIONAL REGULATION',
+      'PRC',
+      'PHILIPPINE IDENTIFICATION',
+      'PHILSYS',
+      'DATE OF BIRTH',
+      'NATIONALITY',
+      'VALID UNTIL',
+      'EXPIRY',
+    ]
+
+    const matched = keywords.filter(k => upper.includes(k))
+
+    if (matched.length < 2) {
+      res.status(422).json({
+        success: false,
+        message:
+          'Could not verify your ID. Please ensure the image is clear and fully shows your government-issued ID.',
+      })
+      return
+    }
+
+    // ── Mark client as ID-verified
+    await pool.execute(
+      'UPDATE users SET id_verified = 1 WHERE id = ? AND role = ?',
+      [Number(userId), 'client']
+    )
+
+    res.json({ success: true, message: 'ID verified! You may now log in.' })
+  } catch (err) {
+    console.error('[verifyClientID]', err)
+    res.status(500).json({ success: false, message: 'ID processing failed. Please try again.' })
   }
 }
 

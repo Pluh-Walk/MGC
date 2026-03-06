@@ -1,12 +1,12 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { register, login, getMe, verifyIBP } from '../controllers/authController'
+import { register, login, getMe, verifyIBP, verifyClientID } from '../controllers/authController'
 import { verifyToken } from '../middleware/auth'
 
 const router = Router()
 
-// Memory-storage multer for IBP card images only
-const ibpUpload = multer({
+// Memory-storage multer for image uploads
+const imageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -18,7 +18,8 @@ const ibpUpload = multer({
 // Public
 router.post('/register', register)
 router.post('/login', login)
-router.post('/verify-ibp', ibpUpload.single('ibp_card'), verifyIBP)
+router.post('/verify-ibp', imageUpload.single('ibp_card'), verifyIBP)
+router.post('/verify-client-id', imageUpload.single('id_image'), verifyClientID)
 
 // Protected
 router.get('/me', verifyToken, getMe)
