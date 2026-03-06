@@ -47,6 +47,16 @@ export const profileApi = {
   // Attorney-specific
   stats:      () => api.get('/profile/attorney/stats'),
   activity:   () => api.get('/profile/attorney/activity'),
+  // Client-specific
+  clientStats:     () => api.get('/profile/client/stats'),
+  clientActivity:  () => api.get('/profile/client/activity'),
+  clientDocuments: () => api.get('/profile/client/documents'),
+  clientUploadDoc: (caseId: number, file: File) => {
+    const fd = new FormData()
+    fd.append('case_id', String(caseId))
+    fd.append('file', file)
+    return api.post('/profile/client/documents', fd, { headers: { 'Content-Type': undefined } })
+  },
   changePassword: (data: { currentPassword: string; newPassword: string }) =>
     api.put('/profile/password', data),
   uploadPhoto: (file: File) => {
@@ -65,6 +75,7 @@ export const documentsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   downloadUrl: (id: number) => `/api/documents/${id}/download`,
+  download: (id: number) => api.get(`/documents/${id}/download`, { responseType: 'blob' }),
   delete: (id: number) => api.delete(`/documents/${id}`),
 }
 

@@ -5,11 +5,12 @@ import {
   Briefcase, Save, Edit2, BadgeCheck, Camera, CheckCircle2, AlertCircle,
   Loader2, Activity, Lock, ChevronDown, Building2, Gavel, Star,
   BookOpen, Clock, Users, Calendar, TrendingUp, FileText, MessageSquare,
+  CreditCard, Heart, Bell, Download, FolderOpen, Upload, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { profileApi } from '../services/api'
+import { profileApi, casesApi, documentsApi } from '../services/api'
 
 const AVAIL_OPTIONS = [
   { value: 'available', label: 'Available',   color: '#22c55e' },
@@ -18,6 +19,7 @@ const AVAIL_OPTIONS = [
 ] as const
 type Avail = 'available' | 'in_court' | 'offline'
 type Tab = 'professional' | 'activity' | 'security'
+type ClientTab = 'info' | 'cases' | 'documents' | 'activity' | 'security'
 
 const ACTION_LABEL: Record<string, string> = {
   CASE_CREATED:        '📁 Created a new case',
@@ -32,10 +34,23 @@ const ACTION_LABEL: Record<string, string> = {
   ANNOUNCEMENT_CREATED:'📢 Posted an announcement',
 }
 
+const CLIENT_ACTION_LABEL: Record<string, string> = {
+  PROFILE_UPDATED:  '👤 Updated profile',
+  PASSWORD_CHANGED: '🔒 Changed password',
+  DOCUMENT_UPLOADED:'📎 Uploaded a document',
+  status_change:    '📋 Case status changed',
+  hearing:          '📅 Hearing scheduled',
+  filing:           '📄 Filing updated',
+  note:             '📝 Note added',
+  document:         '📎 Document uploaded',
+  other:            '📌 Case event',
+}
+
 export default function Profile() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const photoRef = useRef<HTMLInputElement>(null)
+  const docUploadRef = useRef<HTMLInputElement>(null)
   const dashPath = user?.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'
 
   // ── Core state ────────────────────────────────────────
@@ -53,6 +68,18 @@ export default function Profile() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoLoading, setPhotoLoading] = useState(false)
 
+  // ── Client extras ─────────────────────────────────────
+  const [clientTab,      setClientTab]      = useState<ClientTab>('info')
+  const [clientStats,    setClientStats]    = useState<any>(null)
+  const [clientActivity, setClientActivity] = useState<any[]>([])
+  const [clientDocs,     setClientDocs]     = useState<any[]>([])
+  const [clientCases,    setClientCases]    = useState<any[]>([])
+  const [notifs, setNotifs] = useState({ email: true, case_updates: true, hearings: true, messages: true })
+  const [showUpload,   setShowUpload]   = useState(false)
+  const [uploadCase,   setUploadCase]   = useState('')
+  const [uploadFile,   setUploadFile]   = useState<File | null>(null)
+  const [uploadLoading,setUploadLoading]= useState(false)
+
   // ── Professional form ─────────────────────────────────
   const [form, setForm] = useState({
     fullname: '', phone: '', address: '', date_of_birth: '', occupation: '',
@@ -60,6 +87,8 @@ export default function Profile() {
     office_address: '', ibp_number: '', law_firm: '',
     specializations: '', court_admissions: '', years_experience: '',
     bio: '', availability: 'available' as Avail,
+    // client-only
+    id_type: '', id_number: '', emergency_contact: '',
   })
 
   // ── Security form ─────────────────────────────────────
@@ -89,7 +118,18 @@ export default function Profile() {
       years_experience: pr.years_experience?.toString() || '',
       bio: pr.bio || '',
       availability: pr.availability || 'available',
+      id_type: pr.id_type || '',
+      id_number: pr.id_number || '',
+      emergency_contact: pr.emergency_contact || '',
     })
+    if (!isAttorney) {
+      setNotifs({
+        email:        pr.notif_email         !== 0,
+        case_updates: pr.notif_case_updates  !== 0,
+        hearings:     pr.notif_hearings      !== 0,
+        messages:     pr.notif_messages      !== 0,
+      })
+    }
     setAvail(pr.availability || 'available')
     if (isAttorney) {
       setPhotoPreview(pr.photo_path ? profileApi.photoUrl(p.id) : null)
@@ -102,6 +142,16 @@ export default function Profile() {
     profileApi.stats().then(r => setStats(r.data.data)).catch(() => {})
     profileApi.activity().then(r => setActivity(r.data.data)).catch(() => {})
   }, [isAttorney])
+  useEffect(() => {
+    if (isAttorney) return
+    profileApi.clientStats().then(r => setClientStats(r.data.data)).catch(() => {})
+    profileApi.clientActivity().then(r => setClientActivity(r.data.data)).catch(() => {})
+    profileApi.clientDocuments().then(r => setClientDocs(r.data.data)).catch(() => {})
+    casesApi.list().then(r => {
+      const d = r.data.data
+      setClientCases(Array.isArray(d) ? d : (d?.items ?? []))
+    }).catch(() => {})
+  }, [isAttorney])
 
   // ── Profile completion (attorney) ─────────────────────
   const completion = (() => {
@@ -112,6 +162,25 @@ export default function Profile() {
     return Math.round((filled / fields.length) * 100)
   })()
 
+  // ── Profile completion (client) ───────────────────────
+  const clientCompletion = !isAttorney ? (() => {
+    const fields = [form.phone, form.address, form.date_of_birth, form.occupation,
+                    form.id_type, form.id_number, form.emergency_contact]
+    return Math.round((fields.filter(Boolean).length / fields.length) * 100)
+  })() : 0
+
+  const clientMissingFields = !isAttorney
+    ? ([
+        !form.phone             && 'Contact Number',
+        !form.address           && 'Address',
+        !form.date_of_birth     && 'Date of Birth',
+        !form.occupation        && 'Occupation',
+        !form.id_type           && 'Government ID Type',
+        !form.id_number         && 'ID Number',
+        !form.emergency_contact && 'Emergency Contact',
+      ].filter(Boolean) as string[])
+    : []
+
   // ── Save profile ──────────────────────────────────────
   const handleSave = async () => {
     setSaving(true); setMsg(null)
@@ -119,12 +188,43 @@ export default function Profile() {
       await profileApi.updateMe({
         ...form,
         years_experience: form.years_experience ? Number(form.years_experience) : null,
+        ...(!isAttorney ? {
+          notif_email:         notifs.email         ? 1 : 0,
+          notif_case_updates:  notifs.case_updates  ? 1 : 0,
+          notif_hearings:      notifs.hearings      ? 1 : 0,
+          notif_messages:      notifs.messages      ? 1 : 0,
+        } : {}),
       })
       setMsg({ text: 'Profile updated successfully.', ok: true })
       setEditing(false); load()
     } catch (err: any) {
       setMsg({ text: err.response?.data?.message || 'Failed to save.', ok: false })
     } finally { setSaving(false) }
+  }
+
+  // ── Client document upload ────────────────────────────
+  const handleClientDocUpload = async () => {
+    if (!uploadFile || !uploadCase) return
+    setUploadLoading(true)
+    try {
+      await profileApi.clientUploadDoc(Number(uploadCase), uploadFile)
+      setUploadFile(null); setUploadCase(''); setShowUpload(false)
+      setMsg({ text: 'Document uploaded successfully.', ok: true })
+      profileApi.clientDocuments().then(r => setClientDocs(r.data.data)).catch(() => {})
+    } catch (err: any) {
+      setMsg({ text: err.response?.data?.message || 'Upload failed.', ok: false })
+    } finally { setUploadLoading(false) }
+  }
+
+  // ── Download document (authenticated) ────────────────
+  const handleDocDownload = async (docId: number, docName: string) => {
+    try {
+      const res = await documentsApi.download(docId)
+      const url = URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url; a.download = docName; a.click()
+      URL.revokeObjectURL(url)
+    } catch {}
   }
 
   // ── Availability ──────────────────────────────────────
@@ -171,9 +271,15 @@ export default function Profile() {
   const availInfo = AVAIL_OPTIONS.find(a => a.value === avail)!
 
   // ════════════════════════════════════════════════════════
-  // CLIENT PROFILE (unchanged simple view)
+  // CLIENT PROFILE
   // ════════════════════════════════════════════════════════
   if (!isAttorney) {
+    const atty = clientStats?.assigned_attorney
+    const attyAvailColor = atty?.availability === 'available' ? '#22c55e'
+      : atty?.availability === 'in_court' ? '#f59e0b' : '#ef4444'
+    const attyAvailLabel = atty?.availability === 'available' ? 'Available'
+      : atty?.availability === 'in_court' ? 'In Court' : 'Offline'
+
     return (
       <div className="dashboard">
         <nav className="dash-nav">
@@ -183,48 +289,454 @@ export default function Profile() {
             <NotificationBell /><SettingsDropdown />
           </div>
         </nav>
+
         <main className="dash-content">
           <button className="btn-back" onClick={() => navigate(dashPath)}><ArrowLeft size={16} />Back to Dashboard</button>
-          <div className="profile-page">
-            <div className="profile-hero-card">
-              <div className="profile-hero-avatar">{initials}</div>
-              <h1 className="profile-hero-name">{form.fullname || user?.fullname}</h1>
-              <span className="role-badge client" style={{ marginTop: '0.35rem' }}>Client</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginBottom: '1rem' }}>
-              {editing
-                ? <><button className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
-                    <button className="btn-primary" onClick={handleSave} disabled={saving}><Save size={15} />{saving ? 'Saving…' : 'Save Changes'}</button></>
-                : <button className="btn-primary" onClick={() => setEditing(true)}><Edit2 size={15} />Edit Profile</button>}
-            </div>
-            {msg && <p style={{ color: msg.ok ? '#22c55e' : '#ef4444', marginBottom: '1rem' }}>{msg.text}</p>}
-            <div className="profile-info-grid">
-              {[
-                { icon: <UserCircle size={20}/>, color: 'icon-gold', label: 'Full Name', key: 'fullname' as const, type: 'text', placeholder: 'Full name' },
-                { icon: <Phone size={20}/>, color: 'icon-gold', label: 'Phone', key: 'phone' as const, type: 'text', placeholder: '+63 912 345 6789' },
-                { icon: <Briefcase size={20}/>, color: 'icon-blue', label: 'Occupation', key: 'occupation' as const, type: 'text', placeholder: 'e.g. Business Owner' },
-              ].map(({ icon, color, label, key, type, placeholder }) => (
-                <div className="profile-info-card" key={key}>
-                  <div className={`profile-info-icon ${color}`}>{icon}</div>
-                  <div className="profile-info-body">
-                    <label>{label}</label>
-                    {editing ? <input type={type} value={form[key]} onChange={e => setForm({...form, [key]: e.target.value})} placeholder={placeholder} className="profile-input" />
-                             : <span>{form[key] || '—'}</span>}
+
+          <div className="atty-profile-layout">
+
+            {/* ════ SIDEBAR ════ */}
+            <aside className="atty-sidebar">
+
+              {/* Hero Card */}
+              <div className="atty-hero-card">
+                <div className="atty-avatar-wrap">
+                  <div className="atty-avatar">
+                    <span className="atty-avatar-initials">{initials}</span>
                   </div>
                 </div>
-              ))}
-              <div className="profile-info-card"><div className="profile-info-icon icon-blue"><AtSign size={20}/></div><div className="profile-info-body"><label>Username</label><span>@{user?.username}</span></div></div>
-              <div className="profile-info-card"><div className="profile-info-icon icon-green"><Mail size={20}/></div><div className="profile-info-body"><label>Email</label><span>{user?.email}</span></div></div>
-              <div className="profile-info-card" style={{ gridColumn: '1 / -1' }}>
-                <div className="profile-info-icon icon-green"><MapPin size={20}/></div>
-                <div className="profile-info-body">
-                  <label>Address</label>
-                  {editing ? <textarea value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Street, City, Province" className="profile-input" rows={2} />
-                           : <span>{form.address || '—'}</span>}
+                <h2 className="atty-hero-name">{form.fullname || user?.fullname}</h2>
+                <div className="atty-hero-badges">
+                  <span className="role-badge client">Client</span>
+                  {profile?.id_verified === 1 && (
+                    <span className="atty-verified-badge"><BadgeCheck size={12} /> Verified</span>
+                  )}
+                </div>
+                {form.occupation && <p className="atty-hero-firm">{form.occupation}</p>}
+                <div className="client-consult-status">
+                  <span className="avail-dot" style={{ background: '#22c55e' }} />
+                  Active Client
                 </div>
               </div>
-            </div>
-          </div>
+
+              {/* Profile Completion */}
+              <div className="atty-completion-card">
+                <div className="completion-header">
+                  <span>Profile Completion</span>
+                  <strong>{clientCompletion}%</strong>
+                </div>
+                <div className="completion-track">
+                  <div className="completion-fill" style={{ width: `${clientCompletion}%` }} />
+                </div>
+                {clientMissingFields.length > 0 && (
+                  <>
+                    <p className="completion-hint">⚠️ Complete your profile to avoid case delays.</p>
+                    <div className="missing-fields-list">
+                      {clientMissingFields.map(f => (
+                        <span key={f} className="missing-field-chip">{f}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Assigned Attorney Card */}
+              <div className={`client-attorney-card${atty ? '' : ' unassigned'}`}>
+                <p className="client-attorney-label"><Users size={13} /> Assigned Attorney</p>
+                {atty ? (
+                  <>
+                    <div className="client-attorney-info">
+                      <div className="client-attorney-avatar">
+                        {atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                      </div>
+                      <div className="client-attorney-details">
+                        <strong>{atty.fullname}</strong>
+                        <div className="client-attorney-avail">
+                          <span className="avail-dot" style={{ background: attyAvailColor }} />
+                          <span>{attyAvailLabel}</span>
+                        </div>
+                        {atty.law_firm && <small className="client-attorney-firm">{atty.law_firm}</small>}
+                      </div>
+                    </div>
+                    <button className="quick-action-btn" style={{ marginTop: '0.5rem', width: '100%' }}
+                      onClick={() => navigate('/messages')}>
+                      <MessageSquare size={13} /> Message Attorney
+                    </button>
+                  </>
+                ) : (
+                  <p className="client-attorney-none">No attorney assigned yet.</p>
+                )}
+              </div>
+
+              {/* Quick Actions */}
+              <div className="atty-quick-actions">
+                <p className="quick-actions-label">Quick Actions</p>
+                <button className="quick-action-btn" onClick={() => navigate('/cases')}>
+                  <Briefcase size={15} /> View My Cases
+                </button>
+                <button className="quick-action-btn" onClick={() => navigate('/messages')}>
+                  <MessageSquare size={15} /> Message Attorney
+                </button>
+                <button className="quick-action-btn" onClick={() => { setClientTab('documents'); setShowUpload(true) }}>
+                  <Upload size={15} /> Upload Evidence
+                </button>
+                <button className="quick-action-btn" onClick={() => navigate('/hearings')}>
+                  <Calendar size={15} /> View Hearings
+                </button>
+                <button className="quick-action-btn" onClick={() => navigate('/announcements')}>
+                  <Bell size={15} /> Announcements
+                </button>
+              </div>
+            </aside>
+
+            {/* ════ MAIN CONTENT ════ */}
+            <div className="atty-main">
+
+              {/* Tabs */}
+              <div className="atty-tabs">
+                {([
+                  { id: 'info',      icon: <UserCircle size={15}/>, label: 'Personal Info' },
+                  { id: 'cases',     icon: <Briefcase size={15}/>,  label: 'My Cases'     },
+                  { id: 'documents', icon: <FolderOpen size={15}/>, label: 'Documents'    },
+                  { id: 'activity',  icon: <Activity size={15}/>,   label: 'Activity'     },
+                  { id: 'security',  icon: <Lock size={15}/>,       label: 'Security'     },
+                ] as const).map(t => (
+                  <button key={t.id} className={`atty-tab${clientTab === t.id ? ' active' : ''}`}
+                    onClick={() => setClientTab(t.id)}>
+                    {t.icon}{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Alert */}
+              {msg && (
+                <div className={`alert ${msg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '1rem' }}>
+                  {msg.ok ? <CheckCircle2 size={15}/> : <AlertCircle size={15}/>} {msg.text}
+                </div>
+              )}
+
+              {/* ── INFO TAB ── */}
+              {clientTab === 'info' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><UserCircle size={18}/> Personal &amp; Legal Information</h3>
+                    {!editing
+                      ? <button className="btn-primary" onClick={() => setEditing(true)}><Edit2 size={14}/> Edit</button>
+                      : <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button className="btn-secondary" onClick={() => { setEditing(false); load() }}>Cancel</button>
+                          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+                            {saving ? <Loader2 size={14} className="spin"/> : <Save size={14}/>}
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>}
+                  </div>
+
+                  <div className="atty-form-grid">
+                    <div className="atty-field">
+                      <label><UserCircle size={14}/> Full Name</label>
+                      {editing
+                        ? <input className="profile-input" value={form.fullname} onChange={e => setForm({...form, fullname: e.target.value})} placeholder="Full name" />
+                        : <span>{form.fullname || '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><Phone size={14}/> Contact Number</label>
+                      {editing
+                        ? <input className="profile-input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="+63 912 345 6789" />
+                        : <span>{form.phone || '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><Calendar size={14}/> Date of Birth</label>
+                      {editing
+                        ? <input className="profile-input" type="date" value={form.date_of_birth} onChange={e => setForm({...form, date_of_birth: e.target.value})} />
+                        : <span>{form.date_of_birth ? new Date(form.date_of_birth + 'T00:00:00').toLocaleDateString() : '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><Briefcase size={14}/> Occupation</label>
+                      {editing
+                        ? <input className="profile-input" value={form.occupation} onChange={e => setForm({...form, occupation: e.target.value})} placeholder="e.g. Business Owner" />
+                        : <span>{form.occupation || '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><CreditCard size={14}/> Government ID Type</label>
+                      {editing
+                        ? <select className="profile-input" value={form.id_type} onChange={e => setForm({...form, id_type: e.target.value})}>
+                            <option value="">Select ID Type…</option>
+                            <option value="PhilSys">Philippine Identification System (PhilSys)</option>
+                            <option value="Driver's License">Driver's License</option>
+                            <option value="Passport">Passport</option>
+                            <option value="UMID">UMID (SSS / GSIS)</option>
+                            <option value="Voter's ID">Voter's ID</option>
+                            <option value="PhilHealth">PhilHealth ID</option>
+                            <option value="Pag-IBIG">Pag-IBIG / HDMF ID</option>
+                            <option value="Postal ID">Postal ID</option>
+                            <option value="Senior Citizen">Senior Citizen ID</option>
+                            <option value="PRC">PRC ID</option>
+                            <option value="Other">Other Government ID</option>
+                          </select>
+                        : <span>{form.id_type || '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><BadgeCheck size={14}/> ID Number</label>
+                      {editing
+                        ? <input className="profile-input" value={form.id_number} onChange={e => setForm({...form, id_number: e.target.value})} placeholder="e.g. 1234-5678-9012" />
+                        : <span>{form.id_number || '—'}</span>}
+                    </div>
+                    <div className="atty-field full-width">
+                      <label><Heart size={14}/> Emergency Contact</label>
+                      {editing
+                        ? <input className="profile-input" value={form.emergency_contact} onChange={e => setForm({...form, emergency_contact: e.target.value})} placeholder="Name · Relationship · Phone number" />
+                        : <span>{form.emergency_contact || '—'}</span>}
+                    </div>
+                    <div className="atty-field full-width">
+                      <label><MapPin size={14}/> Address</label>
+                      {editing
+                        ? <textarea className="profile-input" rows={2} value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Street, Barangay, City, Province" />
+                        : <span>{form.address || '—'}</span>}
+                    </div>
+                  </div>
+
+                  <div className="atty-identity-row">
+                    <div><AtSign size={13}/> <strong>@{user?.username}</strong></div>
+                    <div><Mail size={13}/> {user?.email}</div>
+                    <div><Clock size={13}/> Member since {profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── CASES TAB ── */}
+              {clientTab === 'cases' && (
+                <>
+                  <div className="atty-section">
+                    <div className="atty-section-header">
+                      <h3><Briefcase size={18}/> My Legal Cases</h3>
+                      <button className="btn-primary" onClick={() => navigate('/cases')}>
+                        <ChevronRight size={14}/> View All
+                      </button>
+                    </div>
+                    <div className="client-case-stats-grid">
+                      <div className="client-stat-card">
+                        <Briefcase size={20} className="stat-icon gold" />
+                        <strong>{clientStats?.active_cases ?? '—'}</strong>
+                        <span>Active Cases</span>
+                      </div>
+                      <div className="client-stat-card">
+                        <CheckCircle2 size={20} className="stat-icon green" />
+                        <strong>{clientStats?.completed_cases ?? '—'}</strong>
+                        <span>Completed</span>
+                      </div>
+                      <div className="client-stat-card">
+                        <Clock size={20} className="stat-icon purple" />
+                        <strong>{clientStats?.pending_cases ?? '—'}</strong>
+                        <span>Pending Review</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {atty ? (
+                    <div className="atty-section">
+                      <div className="atty-section-header">
+                        <h3><Users size={18}/> Assigned Attorney</h3>
+                      </div>
+                      <div className="client-attorney-detail">
+                        <div className="client-attorney-detail-avatar">
+                          {atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        </div>
+                        <div className="client-attorney-detail-info">
+                          <h4>{atty.fullname}</h4>
+                          {atty.law_firm && <p className="atty-hero-firm">{atty.law_firm}</p>}
+                          <div className="client-attorney-avail" style={{ marginTop: '0.35rem' }}>
+                            <span className="avail-dot" style={{ background: attyAvailColor }} />
+                            <span>{attyAvailLabel}</span>
+                          </div>
+                        </div>
+                        <button className="btn-primary" onClick={() => navigate('/messages')}>
+                          <MessageSquare size={14}/> Message
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="atty-section">
+                      <p className="empty-state-sm">No attorney has been assigned to your account yet.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── DOCUMENTS TAB ── */}
+              {clientTab === 'documents' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><FolderOpen size={18}/> Document Vault</h3>
+                    <button className="btn-primary" onClick={() => setShowUpload(v => !v)}>
+                      <Upload size={14}/> Upload Document
+                    </button>
+                  </div>
+
+                  {/* Upload form */}
+                  {showUpload && (
+                    <div className="client-upload-zone">
+                      <p className="client-upload-title">Upload Evidence / Legal Document</p>
+                      <div className="client-upload-row">
+                        <select
+                          className="profile-input"
+                          value={uploadCase}
+                          onChange={e => setUploadCase(e.target.value)}
+                        >
+                          <option value="">Select a case…</option>
+                          {clientCases.map((c: any) => (
+                            <option key={c.id} value={c.id}>{c.case_number} — {c.title}</option>
+                          ))}
+                        </select>
+                        <input ref={docUploadRef} type="file" style={{ display: 'none' }}
+                          onChange={e => setUploadFile(e.target.files?.[0] ?? null)} />
+                        <button className="btn-secondary" onClick={() => docUploadRef.current?.click()}>
+                          <FileText size={14}/> {uploadFile ? uploadFile.name : 'Choose File'}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                        <button className="btn-primary" disabled={!uploadFile || !uploadCase || uploadLoading}
+                          onClick={handleClientDocUpload}>
+                          {uploadLoading ? <Loader2 size={14} className="spin"/> : <Upload size={14}/>}
+                          {uploadLoading ? 'Uploading…' : 'Upload'}
+                        </button>
+                        <button className="btn-secondary" onClick={() => { setShowUpload(false); setUploadFile(null); setUploadCase('') }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Documents list */}
+                  {clientDocs.length === 0 ? (
+                    <p className="empty-state-sm">No shared documents yet. Documents shared by your attorney will appear here.</p>
+                  ) : (
+                    <div className="client-doc-list">
+                      {clientDocs.map((doc: any) => (
+                        <div key={doc.id} className="client-doc-item">
+                          <div className="client-doc-icon"><FileText size={18}/></div>
+                          <div className="client-doc-body">
+                            <strong>{doc.original_name}</strong>
+                            <div className="client-doc-meta">
+                              <span className="client-doc-category">{doc.category}</span>
+                              <span>{doc.case_number}</span>
+                              <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <small>Uploaded by {doc.uploaded_by_name}</small>
+                          </div>
+                          <button className="btn-secondary client-doc-dl"
+                            onClick={() => handleDocDownload(doc.id, doc.original_name)}>
+                            <Download size={13}/> Download
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ACTIVITY TAB ── */}
+              {clientTab === 'activity' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><Activity size={18}/> Recent Legal Activity</h3>
+                  </div>
+                  {clientActivity.length === 0 ? (
+                    <p className="empty-state-sm">No activity recorded yet.</p>
+                  ) : (
+                    <div className="activity-feed">
+                      {clientActivity.map((a, i) => (
+                        <div key={i} className="activity-item">
+                          <div className="activity-dot" />
+                          <div className="activity-body">
+                            <span>{CLIENT_ACTION_LABEL[a.action] || a.action}</span>
+                            {a.details && <small>{a.details}</small>}
+                            {a.case_number && <small>Case: {a.case_number} — {a.case_title}</small>}
+                            <time>{new Date(a.created_at).toLocaleString()}</time>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── SECURITY TAB ── */}
+              {clientTab === 'security' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><Lock size={18}/> Security &amp; Preferences</h3>
+                  </div>
+
+                  {/* Change Password */}
+                  <div className="atty-security-section">
+                    <h4>Change Password</h4>
+                    {pwMsg && (
+                      <div className={`alert ${pwMsg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '0.75rem' }}>
+                        {pwMsg.ok ? <CheckCircle2 size={14}/> : <AlertCircle size={14}/>} {pwMsg.text}
+                      </div>
+                    )}
+                    <div className="atty-form-grid">
+                      <div className="atty-field full-width">
+                        <label><Lock size={14}/> Current Password</label>
+                        <input type="password" className="profile-input" value={pwForm.currentPassword}
+                          onChange={e => setPwForm({...pwForm, currentPassword: e.target.value})} placeholder="Enter current password" />
+                      </div>
+                      <div className="atty-field">
+                        <label><Lock size={14}/> New Password</label>
+                        <input type="password" className="profile-input" value={pwForm.newPassword}
+                          onChange={e => setPwForm({...pwForm, newPassword: e.target.value})} placeholder="Minimum 8 characters" />
+                      </div>
+                      <div className="atty-field">
+                        <label><Lock size={14}/> Confirm New Password</label>
+                        <input type="password" className="profile-input" value={pwForm.confirmNew}
+                          onChange={e => setPwForm({...pwForm, confirmNew: e.target.value})} placeholder="Re-enter new password" />
+                      </div>
+                    </div>
+                    <button className="btn-primary" style={{ marginTop: '0.75rem' }} onClick={handlePasswordChange} disabled={pwSaving}>
+                      {pwSaving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Update Password</>}
+                    </button>
+                  </div>
+
+                  {/* Communication Preferences */}
+                  <div className="atty-security-info">
+                    <h4>Communication Preferences</h4>
+                    {([
+                      { key: 'email'        as const, icon: <Mail size={14}/>,         label: 'Email Notifications',  desc: 'Receive system alerts via email' },
+                      { key: 'case_updates' as const, icon: <Briefcase size={14}/>,    label: 'Case Update Alerts',   desc: 'Notified when your case status changes' },
+                      { key: 'hearings'     as const, icon: <Calendar size={14}/>,     label: 'Hearing Reminders',    desc: 'Reminders before scheduled hearings' },
+                      { key: 'messages'     as const, icon: <MessageSquare size={14}/>,label: 'Message Notifications',desc: 'Alert when attorney sends a message' },
+                    ]).map(({ key, icon, label, desc }) => (
+                      <div key={key} className="notif-toggle-row">
+                        <div className="notif-toggle-info">
+                          <div className="notif-toggle-label">{icon} {label}</div>
+                          <small>{desc}</small>
+                        </div>
+                        <button
+                          className={`toggle-switch${notifs[key] ? ' on' : ''}`}
+                          onClick={() => setNotifs(n => ({ ...n, [key]: !n[key] }))}
+                          role="switch"
+                          aria-checked={notifs[key]}
+                        >
+                          <span className="toggle-thumb" />
+                        </button>
+                      </div>
+                    ))}
+                    <button className="btn-primary" style={{ marginTop: '1rem' }} onClick={handleSave} disabled={saving}>
+                      {saving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Save Preferences</>}
+                    </button>
+                  </div>
+
+                  {/* Account Info */}
+                  <div className="atty-security-info" style={{ marginTop: '1.5rem' }}>
+                    <h4>Account Info</h4>
+                    <div className="security-info-row"><span>Account created:</span><span>{profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</span></div>
+                    <div className="security-info-row"><span>ID Verified:</span><span>{profile?.id_verified ? '✅ Verified' : '⚠️ Pending verification'}</span></div>
+                  </div>
+                </div>
+              )}
+
+            </div>{/* end atty-main */}
+          </div>{/* end atty-profile-layout */}
         </main>
       </div>
     )

@@ -58,15 +58,34 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
     }
 
     if (user.role === 'client') {
+      const { id_type, id_number, emergency_contact,
+              notif_email, notif_case_updates, notif_hearings, notif_messages } = req.body
       await pool.query<ResultSetHeader>(
-        `INSERT INTO client_profiles (user_id, phone, address, date_of_birth, occupation)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO client_profiles
+           (user_id, phone, address, date_of_birth, occupation,
+            id_type, id_number, emergency_contact,
+            notif_email, notif_case_updates, notif_hearings, notif_messages)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-           phone         = VALUES(phone),
-           address       = VALUES(address),
-           date_of_birth = VALUES(date_of_birth),
-           occupation    = VALUES(occupation)`,
-        [user.id, phone ?? null, address ?? null, date_of_birth ?? null, occupation ?? null]
+           phone               = VALUES(phone),
+           address             = VALUES(address),
+           date_of_birth       = VALUES(date_of_birth),
+           occupation          = VALUES(occupation),
+           id_type             = VALUES(id_type),
+           id_number           = VALUES(id_number),
+           emergency_contact   = VALUES(emergency_contact),
+           notif_email         = VALUES(notif_email),
+           notif_case_updates  = VALUES(notif_case_updates),
+           notif_hearings      = VALUES(notif_hearings),
+           notif_messages      = VALUES(notif_messages)`,
+        [
+          user.id, phone ?? null, address ?? null, date_of_birth ?? null, occupation ?? null,
+          id_type ?? null, id_number ?? null, emergency_contact ?? null,
+          notif_email  !== undefined ? (notif_email  ? 1 : 0) : 1,
+          notif_case_updates !== undefined ? (notif_case_updates ? 1 : 0) : 1,
+          notif_hearings !== undefined ? (notif_hearings ? 1 : 0) : 1,
+          notif_messages !== undefined ? (notif_messages ? 1 : 0) : 1,
+        ]
       )
     } else if (user.role === 'attorney') {
       await pool.query<ResultSetHeader>(
@@ -92,6 +111,123 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
 
     await audit(req, 'PROFILE_UPDATED', 'user', user.id)
     res.json({ success: true, message: 'Profile updated.' })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Client: Stats ─────────────────────────────────────────
+export const getClientStats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const [[active]]    = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE client_id = ? AND status = 'active'  AND deleted_at IS NULL`, [user.id])
+    const [[completed]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE client_id = ? AND status = 'closed'  AND deleted_at IS NULL`, [user.id])
+    const [[pending]]   = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE client_id = ? AND status = 'pending' AND deleted_at IS NULL`, [user.id])
+
+    const [attyRows] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname, ap.availability, ap.law_firm
+       FROM client_profiles cp
+       JOIN users u ON u.id = cp.assigned_attorney_id
+       LEFT JOIN attorney_profiles ap ON ap.user_id = cp.assigned_attorney_id
+       WHERE cp.user_id = ? AND cp.assigned_attorney_id IS NOT NULL`,
+      [user.id]
+    )
+    res.json({ success: true, data: {
+      active_cases:    active.cnt    || 0,
+      completed_cases: completed.cnt || 0,
+      pending_cases:   pending.cnt   || 0,
+      assigned_attorney: attyRows[0] ?? null,
+    }})
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Client: Recent Activity ────────────────────────────────
+export const getClientActivity = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const [auditRows] = await pool.query<RowDataPacket[]>(
+      `SELECT action, target_type, details, created_at
+       FROM audit_log WHERE user_id = ?
+       ORDER BY created_at DESC LIMIT 10`,
+      [user.id]
+    )
+    const [timelineRows] = await pool.query<RowDataPacket[]>(
+      `SELECT ct.event_type AS action, ct.description AS details,
+              ct.created_at, c.case_number, c.title AS case_title
+       FROM case_timeline ct
+       JOIN cases c ON c.id = ct.case_id
+       WHERE c.client_id = ?
+       ORDER BY ct.created_at DESC LIMIT 10`,
+      [user.id]
+    )
+    const combined = [
+      ...auditRows.map(r => ({ ...r, source: 'audit' })),
+      ...(timelineRows as any[]).map(r => ({ ...r, source: 'timeline' })),
+    ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+     .slice(0, 15)
+    res.json({ success: true, data: combined })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Client: Documents (shared by attorney) ─────────────────
+export const getClientDocuments = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT d.id, d.original_name, d.category, d.file_size, d.mime_type, d.created_at,
+              c.case_number, c.title AS case_title,
+              u.fullname AS uploaded_by_name
+       FROM documents d
+       JOIN cases c ON c.id = d.case_id
+       LEFT JOIN users u ON u.id = d.uploaded_by
+       WHERE c.client_id = ? AND d.is_client_visible = 1
+       ORDER BY d.created_at DESC`,
+      [user.id]
+    )
+    res.json({ success: true, data: rows })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Client: Upload Document ────────────────────────────────
+export const clientUploadDocument = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const { case_id } = req.body
+    const file = req.file
+    if (!case_id || !file) {
+      res.status(400).json({ success: false, message: 'case_id and file are required.' })
+      return
+    }
+    const [caseRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM cases WHERE id = ? AND client_id = ? AND deleted_at IS NULL`,
+      [case_id, user.id]
+    )
+    if (!caseRows.length) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path)
+      res.status(403).json({ success: false, message: 'Case not found or access denied.' })
+      return
+    }
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO documents (case_id, uploaded_by, filename, original_name, file_size, mime_type, category, is_client_visible)
+       VALUES (?, ?, ?, ?, ?, ?, 'evidence', 1)`,
+      [case_id, user.id, file.filename, file.originalname, file.size, file.mimetype]
+    )
+    await pool.query(
+      `INSERT INTO case_timeline (case_id, event_type, description, event_date, created_by)
+       VALUES (?, 'document', ?, CURDATE(), ?)`,
+      [case_id, `Client uploaded document: ${file.originalname}`, user.id]
+    )
+    await audit(req, 'DOCUMENT_UPLOADED', 'document', result.insertId, file.originalname)
+    res.status(201).json({ success: true, message: 'Document uploaded.', documentId: result.insertId })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
   }

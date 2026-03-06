@@ -12,6 +12,10 @@ import {
   changePassword,
   uploadProfilePhoto,
   serveProfilePhoto,
+  getClientStats,
+  getClientActivity,
+  getClientDocuments,
+  clientUploadDocument,
 } from '../controllers/profileController'
 import { authMiddleware, requireRole } from '../middleware/auth'
 
@@ -38,6 +42,32 @@ const photoUpload = multer({
   },
 })
 
+// Client document upload storage
+const clientDocStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(process.cwd(), 'uploads', 'client_docs')
+    fs.mkdirSync(dir, { recursive: true })
+    cb(null, dir)
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname)
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`)
+  },
+})
+const clientDocUpload = multer({
+  storage: clientDocStorage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ALLOWED = [
+      'application/pdf', 'image/jpeg', 'image/png', 'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]
+    if (ALLOWED.includes(file.mimetype)) cb(null, true)
+    else cb(new Error('File type not allowed.'))
+  },
+})
+
 // Public: serve profile photo
 router.get('/photo/:userId', serveProfilePhoto)
 
@@ -52,6 +82,12 @@ router.post('/photo', photoUpload.single('photo'), uploadProfilePhoto)
 // Attorney stats & activity
 router.get('/attorney/stats',    requireRole('attorney'), getAttorneyStats)
 router.get('/attorney/activity', requireRole('attorney'), getAttorneyActivity)
+
+// Client stats, activity, documents
+router.get('/client/stats',     requireRole('client'), getClientStats)
+router.get('/client/activity',  requireRole('client'), getClientActivity)
+router.get('/client/documents', requireRole('client'), getClientDocuments)
+router.post('/client/documents', requireRole('client'), clientDocUpload.single('file'), clientUploadDocument)
 
 // Attorney-only: view/edit a client's profile
 router.get('/clients/:id',  requireRole('attorney'), getClientProfile)
