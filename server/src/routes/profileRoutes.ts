@@ -6,6 +6,7 @@ import {
   getMyProfile,
   updateMyProfile,
   getClientProfile,
+  getClientCases,
   updateClientNotes,
   getAttorneyStats,
   getAttorneyActivity,
@@ -16,6 +17,7 @@ import {
   getClientActivity,
   getClientDocuments,
   clientUploadDocument,
+  getAttorneyPublicProfile,
 } from '../controllers/profileController'
 import { authMiddleware, requireRole } from '../middleware/auth'
 
@@ -89,8 +91,12 @@ router.get('/client/activity',  requireRole('client'), getClientActivity)
 router.get('/client/documents', requireRole('client'), getClientDocuments)
 router.post('/client/documents', requireRole('client'), clientDocUpload.single('file'), clientUploadDocument)
 
+// Client: view assigned attorney's public profile
+router.get('/attorneys/:id', requireRole('client'), getAttorneyPublicProfile)
+
 // Attorney-only: view/edit a client's profile
-router.get('/clients/:id',  requireRole('attorney'), getClientProfile)
-router.put('/clients/:id',  requireRole('attorney'), updateClientNotes)
+router.get('/clients/:id',        requireRole('attorney'), getClientProfile)
+router.get('/clients/:id/cases',  requireRole('attorney'), getClientCases)
+router.put('/clients/:id',        requireRole('attorney'), updateClientNotes)
 
 export default router

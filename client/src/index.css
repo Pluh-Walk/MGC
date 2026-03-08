@@ -3881,6 +3881,50 @@ body {
   margin: 0;
 }
 
+/* Attorney public profile panel (inside client attorney card) */
+.atty-public-panel {
+  position: relative;
+  margin-top: 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.8rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.atty-public-panel-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0.1rem;
+  border-radius: 4px;
+}
+.atty-public-panel-close:hover { color: var(--text); background: var(--border); }
+.atty-public-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.atty-public-row svg { flex-shrink: 0; margin-top: 0.1rem; color: var(--text-muted); }
+.atty-public-bio {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0.2rem 0 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.45rem;
+}
+
 /* Case stats grid (3 cards) */
 .client-case-stats-grid {
   display: grid;
@@ -4101,5 +4145,20 @@ select.profile-input option { background: var(--surface-solid); }
   .client-case-stats-grid { grid-template-columns: 1fr 1fr; }
   .client-attorney-detail { flex-direction: column; align-items: flex-start; }
   .client-upload-row { flex-direction: column; }
+}
+
+/* ── Client View (attorney view of a single client) ──────── */
+.client-info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.client-info-row .info-icon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: var(--text-muted);
 }
 

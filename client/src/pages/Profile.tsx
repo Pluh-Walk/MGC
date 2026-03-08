@@ -5,12 +5,12 @@ import {
   Briefcase, Save, Edit2, BadgeCheck, Camera, CheckCircle2, AlertCircle,
   Loader2, Activity, Lock, ChevronDown, Building2, Gavel, Star,
   BookOpen, Clock, Users, Calendar, TrendingUp, FileText, MessageSquare,
-  CreditCard, Heart, Bell, Download, FolderOpen, Upload, ChevronRight,
+  CreditCard, Heart, Bell, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { profileApi, casesApi, documentsApi } from '../services/api'
+import { profileApi, casesApi } from '../services/api'
 
 const AVAIL_OPTIONS = [
   { value: 'available', label: 'Available',   color: '#22c55e' },
@@ -19,7 +19,7 @@ const AVAIL_OPTIONS = [
 ] as const
 type Avail = 'available' | 'in_court' | 'offline'
 type Tab = 'professional' | 'activity' | 'security'
-type ClientTab = 'info' | 'cases' | 'documents' | 'activity' | 'security'
+type ClientTab = 'info' | 'cases' | 'activity' | 'security'
 
 const ACTION_LABEL: Record<string, string> = {
   CASE_CREATED:        '📁 Created a new case',
@@ -50,7 +50,6 @@ export default function Profile() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const photoRef = useRef<HTMLInputElement>(null)
-  const docUploadRef = useRef<HTMLInputElement>(null)
   const dashPath = user?.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'
 
   // ── Core state ────────────────────────────────────────
@@ -72,13 +71,9 @@ export default function Profile() {
   const [clientTab,      setClientTab]      = useState<ClientTab>('info')
   const [clientStats,    setClientStats]    = useState<any>(null)
   const [clientActivity, setClientActivity] = useState<any[]>([])
-  const [clientDocs,     setClientDocs]     = useState<any[]>([])
   const [clientCases,    setClientCases]    = useState<any[]>([])
   const [notifs, setNotifs] = useState({ email: true, case_updates: true, hearings: true, messages: true })
-  const [showUpload,   setShowUpload]   = useState(false)
-  const [uploadCase,   setUploadCase]   = useState('')
-  const [uploadFile,   setUploadFile]   = useState<File | null>(null)
-  const [uploadLoading,setUploadLoading]= useState(false)
+  const [attyImgErr,   setAttyImgErr]   = useState(false)
 
   // ── Professional form ─────────────────────────────────
   const [form, setForm] = useState({
@@ -146,7 +141,6 @@ export default function Profile() {
     if (isAttorney) return
     profileApi.clientStats().then(r => setClientStats(r.data.data)).catch(() => {})
     profileApi.clientActivity().then(r => setClientActivity(r.data.data)).catch(() => {})
-    profileApi.clientDocuments().then(r => setClientDocs(r.data.data)).catch(() => {})
     casesApi.list().then(r => {
       const d = r.data.data
       setClientCases(Array.isArray(d) ? d : (d?.items ?? []))
@@ -200,31 +194,6 @@ export default function Profile() {
     } catch (err: any) {
       setMsg({ text: err.response?.data?.message || 'Failed to save.', ok: false })
     } finally { setSaving(false) }
-  }
-
-  // ── Client document upload ────────────────────────────
-  const handleClientDocUpload = async () => {
-    if (!uploadFile || !uploadCase) return
-    setUploadLoading(true)
-    try {
-      await profileApi.clientUploadDoc(Number(uploadCase), uploadFile)
-      setUploadFile(null); setUploadCase(''); setShowUpload(false)
-      setMsg({ text: 'Document uploaded successfully.', ok: true })
-      profileApi.clientDocuments().then(r => setClientDocs(r.data.data)).catch(() => {})
-    } catch (err: any) {
-      setMsg({ text: err.response?.data?.message || 'Upload failed.', ok: false })
-    } finally { setUploadLoading(false) }
-  }
-
-  // ── Download document (authenticated) ────────────────
-  const handleDocDownload = async (docId: number, docName: string) => {
-    try {
-      const res = await documentsApi.download(docId)
-      const url = URL.createObjectURL(new Blob([res.data]))
-      const a = document.createElement('a')
-      a.href = url; a.download = docName; a.click()
-      URL.revokeObjectURL(url)
-    } catch {}
   }
 
   // ── Availability ──────────────────────────────────────
@@ -347,7 +316,16 @@ export default function Profile() {
                   <>
                     <div className="client-attorney-info">
                       <div className="client-attorney-avatar">
-                        {atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        {atty.id && !attyImgErr ? (
+                          <img
+                            src={profileApi.photoUrl(atty.id)}
+                            alt={atty.fullname}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                            onError={() => setAttyImgErr(true)}
+                          />
+                        ) : (
+                          atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')
+                        )}
                       </div>
                       <div className="client-attorney-details">
                         <strong>{atty.fullname}</strong>
@@ -377,9 +355,6 @@ export default function Profile() {
                 <button className="quick-action-btn" onClick={() => navigate('/messages')}>
                   <MessageSquare size={15} /> Message Attorney
                 </button>
-                <button className="quick-action-btn" onClick={() => { setClientTab('documents'); setShowUpload(true) }}>
-                  <Upload size={15} /> Upload Evidence
-                </button>
                 <button className="quick-action-btn" onClick={() => navigate('/hearings')}>
                   <Calendar size={15} /> View Hearings
                 </button>
@@ -397,7 +372,6 @@ export default function Profile() {
                 {([
                   { id: 'info',      icon: <UserCircle size={15}/>, label: 'Personal Info' },
                   { id: 'cases',     icon: <Briefcase size={15}/>,  label: 'My Cases'     },
-                  { id: 'documents', icon: <FolderOpen size={15}/>, label: 'Documents'    },
                   { id: 'activity',  icon: <Activity size={15}/>,   label: 'Activity'     },
                   { id: 'security',  icon: <Lock size={15}/>,       label: 'Security'     },
                 ] as const).map(t => (
@@ -539,7 +513,16 @@ export default function Profile() {
                       </div>
                       <div className="client-attorney-detail">
                         <div className="client-attorney-detail-avatar">
-                          {atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                          {atty.id && !attyImgErr ? (
+                            <img
+                              src={profileApi.photoUrl(atty.id)}
+                              alt={atty.fullname}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+                              onError={() => setAttyImgErr(true)}
+                            />
+                          ) : (
+                            atty.fullname.split(' ').map((n: string) => n[0]).slice(0, 2).join('')
+                          )}
                         </div>
                         <div className="client-attorney-detail-info">
                           <h4>{atty.fullname}</h4>
@@ -560,78 +543,6 @@ export default function Profile() {
                     </div>
                   )}
                 </>
-              )}
-
-              {/* ── DOCUMENTS TAB ── */}
-              {clientTab === 'documents' && (
-                <div className="atty-section">
-                  <div className="atty-section-header">
-                    <h3><FolderOpen size={18}/> Document Vault</h3>
-                    <button className="btn-primary" onClick={() => setShowUpload(v => !v)}>
-                      <Upload size={14}/> Upload Document
-                    </button>
-                  </div>
-
-                  {/* Upload form */}
-                  {showUpload && (
-                    <div className="client-upload-zone">
-                      <p className="client-upload-title">Upload Evidence / Legal Document</p>
-                      <div className="client-upload-row">
-                        <select
-                          className="profile-input"
-                          value={uploadCase}
-                          onChange={e => setUploadCase(e.target.value)}
-                        >
-                          <option value="">Select a case…</option>
-                          {clientCases.map((c: any) => (
-                            <option key={c.id} value={c.id}>{c.case_number} — {c.title}</option>
-                          ))}
-                        </select>
-                        <input ref={docUploadRef} type="file" style={{ display: 'none' }}
-                          onChange={e => setUploadFile(e.target.files?.[0] ?? null)} />
-                        <button className="btn-secondary" onClick={() => docUploadRef.current?.click()}>
-                          <FileText size={14}/> {uploadFile ? uploadFile.name : 'Choose File'}
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                        <button className="btn-primary" disabled={!uploadFile || !uploadCase || uploadLoading}
-                          onClick={handleClientDocUpload}>
-                          {uploadLoading ? <Loader2 size={14} className="spin"/> : <Upload size={14}/>}
-                          {uploadLoading ? 'Uploading…' : 'Upload'}
-                        </button>
-                        <button className="btn-secondary" onClick={() => { setShowUpload(false); setUploadFile(null); setUploadCase('') }}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Documents list */}
-                  {clientDocs.length === 0 ? (
-                    <p className="empty-state-sm">No shared documents yet. Documents shared by your attorney will appear here.</p>
-                  ) : (
-                    <div className="client-doc-list">
-                      {clientDocs.map((doc: any) => (
-                        <div key={doc.id} className="client-doc-item">
-                          <div className="client-doc-icon"><FileText size={18}/></div>
-                          <div className="client-doc-body">
-                            <strong>{doc.original_name}</strong>
-                            <div className="client-doc-meta">
-                              <span className="client-doc-category">{doc.category}</span>
-                              <span>{doc.case_number}</span>
-                              <span>{new Date(doc.created_at).toLocaleDateString()}</span>
-                            </div>
-                            <small>Uploaded by {doc.uploaded_by_name}</small>
-                          </div>
-                          <button className="btn-secondary client-doc-dl"
-                            onClick={() => handleDocDownload(doc.id, doc.original_name)}>
-                            <Download size={13}/> Download
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               )}
 
               {/* ── ACTIVITY TAB ── */}

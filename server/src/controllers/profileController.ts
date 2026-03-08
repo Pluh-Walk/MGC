@@ -128,11 +128,24 @@ export const getClientStats = async (req: Request, res: Response): Promise<void>
       `SELECT COUNT(*) AS cnt FROM cases WHERE client_id = ? AND status = 'pending' AND deleted_at IS NULL`, [user.id])
 
     const [attyRows] = await pool.query<RowDataPacket[]>(
-      `SELECT u.id, u.fullname, ap.availability, ap.law_firm
-       FROM client_profiles cp
-       JOIN users u ON u.id = cp.assigned_attorney_id
-       LEFT JOIN attorney_profiles ap ON ap.user_id = cp.assigned_attorney_id
-       WHERE cp.user_id = ? AND cp.assigned_attorney_id IS NOT NULL`,
+      `SELECT
+         COALESCE(u_prof.id,          u_case.id)          AS id,
+         COALESCE(u_prof.fullname,    u_case.fullname)    AS fullname,
+         COALESCE(ap_prof.availability, ap_case.availability) AS availability,
+         COALESCE(ap_prof.law_firm,   ap_case.law_firm)   AS law_firm,
+         COALESCE(ap_prof.photo_path, ap_case.photo_path) AS photo_path
+       FROM (SELECT ? AS uid) base
+       LEFT JOIN client_profiles cp ON cp.user_id = base.uid
+       LEFT JOIN users u_prof ON u_prof.id = cp.assigned_attorney_id
+       LEFT JOIN attorney_profiles ap_prof ON ap_prof.user_id = u_prof.id
+       LEFT JOIN cases recent_c ON recent_c.id = (
+         SELECT id FROM cases
+         WHERE client_id = base.uid AND deleted_at IS NULL AND attorney_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1
+       )
+       LEFT JOIN users u_case ON u_case.id = recent_c.attorney_id
+       LEFT JOIN attorney_profiles ap_case ON ap_case.user_id = u_case.id
+       WHERE COALESCE(u_prof.id, u_case.id) IS NOT NULL`,
       [user.id]
     )
     res.json({ success: true, data: {
@@ -181,14 +194,14 @@ export const getClientDocuments = async (req: Request, res: Response): Promise<v
   try {
     const user = (req as any).user
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT d.id, d.original_name, d.category, d.file_size, d.mime_type, d.created_at,
+      `SELECT d.id, d.original_name, d.category, d.file_size, d.mime_type, d.uploaded_at AS created_at,
               c.case_number, c.title AS case_title,
               u.fullname AS uploaded_by_name
        FROM documents d
        JOIN cases c ON c.id = d.case_id
        LEFT JOIN users u ON u.id = d.uploaded_by
-       WHERE c.client_id = ? AND d.is_client_visible = 1
-       ORDER BY d.created_at DESC`,
+       WHERE c.client_id = ? AND d.is_client_visible = 1 AND d.deleted_at IS NULL
+       ORDER BY d.uploaded_at DESC`,
       [user.id]
     )
     res.json({ success: true, data: rows })
@@ -343,18 +356,77 @@ export const serveProfilePhoto = async (req: Request, res: Response): Promise<vo
   }
 }
 
+// ─── Get Attorney Public Profile (client only) ────────────
+export const getAttorneyPublicProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname, u.email,
+              ap.phone, ap.office_address, ap.law_firm, ap.specializations,
+              ap.court_admissions, ap.years_experience, ap.bio,
+              ap.availability, ap.photo_path
+       FROM users u
+       LEFT JOIN attorney_profiles ap ON ap.user_id = u.id
+       WHERE u.id = ? AND u.role = 'attorney'`,
+      [id]
+    )
+
+    if (!rows.length) {
+      res.status(404).json({ success: false, message: 'Attorney not found.' })
+      return
+    }
+
+    res.json({ success: true, data: rows[0] })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Get Client Cases by ID (attorney only) ─────────────────
+export const getClientCases = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT c.id, c.case_number, c.title, c.case_type, c.status, c.filing_date,
+              at.fullname AS attorney_name
+       FROM cases c
+       LEFT JOIN users at ON at.id = c.attorney_id
+       WHERE c.client_id = ? AND c.deleted_at IS NULL
+       ORDER BY c.created_at DESC`,
+      [id]
+    )
+
+    res.json({ success: true, data: rows })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
 // ─── Get Client Profile by ID (attorney only) ───────────────
 export const getClientProfile = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT u.id, u.fullname, u.username, u.email, u.created_at,
+      `SELECT u.id, u.fullname, u.username, u.email, u.created_at, u.id_verified,
               cp.phone, cp.address, cp.date_of_birth, cp.occupation, cp.notes,
-              at.fullname AS attorney_name
+              cp.id_type, cp.id_number, cp.emergency_contact, cp.assigned_attorney_id,
+              COALESCE(at_prof.id,         at_case.id)         AS attorney_id,
+              COALESCE(at_prof.fullname,   at_case.fullname)   AS attorney_name,
+              COALESCE(ap_prof.photo_path, ap_case.photo_path) AS attorney_photo
        FROM users u
        LEFT JOIN client_profiles cp ON cp.user_id = u.id
-       LEFT JOIN users at ON at.id = cp.assigned_attorney_id
+       LEFT JOIN users at_prof ON at_prof.id = cp.assigned_attorney_id
+       LEFT JOIN attorney_profiles ap_prof ON ap_prof.user_id = at_prof.id
+       LEFT JOIN cases recent_c ON recent_c.id = (
+         SELECT id FROM cases
+         WHERE client_id = u.id AND deleted_at IS NULL AND attorney_id IS NOT NULL
+         ORDER BY created_at DESC LIMIT 1
+       )
+       LEFT JOIN users at_case ON at_case.id = recent_c.attorney_id
+       LEFT JOIN attorney_profiles ap_case ON ap_case.user_id = at_case.id
        WHERE u.id = ? AND u.role = 'client'`,
       [id]
     )

@@ -43,7 +43,9 @@ export const profileApi = {
   me: () => api.get('/profile/me'),
   updateMe: (data: object) => api.put('/profile/me', data),
   getClient: (id: number) => api.get(`/profile/clients/${id}`),
+  getClientCases: (id: number) => api.get(`/profile/clients/${id}/cases`),
   updateClient: (id: number, data: object) => api.put(`/profile/clients/${id}`, data),
+  getAttorney: (id: number) => api.get(`/profile/attorneys/${id}`),
   // Attorney-specific
   stats:      () => api.get('/profile/attorney/stats'),
   activity:   () => api.get('/profile/attorney/activity'),
@@ -72,7 +74,7 @@ export const documentsApi = {
   list: (caseId: number) => api.get(`/cases/${caseId}/documents`),
   upload: (caseId: number, formData: FormData) =>
     api.post(`/cases/${caseId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     }),
   downloadUrl: (id: number) => `/api/documents/${id}/download`,
   download: (id: number) => api.get(`/documents/${id}/download`, { responseType: 'blob' }),
