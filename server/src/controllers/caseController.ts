@@ -281,8 +281,10 @@ export const addNote = async (req: Request, res: Response): Promise<void> => {
 export const getClientList = async (_req: Request, res: Response): Promise<void> => {
   try {
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT u.id, u.fullname, u.email, u.username
+      `SELECT u.id, u.fullname, u.email, u.username, u.id_verified,
+              cp.phone, cp.address, cp.occupation
        FROM users u
+       LEFT JOIN client_profiles cp ON cp.user_id = u.id
        WHERE u.role = 'client'
        ORDER BY u.fullname ASC`
     )

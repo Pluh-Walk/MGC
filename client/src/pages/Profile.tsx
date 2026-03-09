@@ -5,7 +5,7 @@ import {
   Briefcase, Save, Edit2, BadgeCheck, Camera, CheckCircle2, AlertCircle,
   Loader2, Activity, Lock, ChevronDown, Building2, Gavel, Star,
   BookOpen, Clock, Users, Calendar, TrendingUp, FileText, MessageSquare,
-  CreditCard, Heart, Bell, ChevronRight,
+  CreditCard, Heart, Bell, ChevronRight, Upload, X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
@@ -66,6 +66,7 @@ export default function Profile() {
   const [availOpen, setAvailOpen] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoLoading, setPhotoLoading] = useState(false)
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false)
 
   // ── Client extras ─────────────────────────────────────
   const [clientTab,      setClientTab]      = useState<ClientTab>('info')
@@ -126,9 +127,7 @@ export default function Profile() {
       })
     }
     setAvail(pr.availability || 'available')
-    if (isAttorney) {
-      setPhotoPreview(pr.photo_path ? profileApi.photoUrl(p.id) : null)
-    }
+    setPhotoPreview(pr.photo_path ? profileApi.photoUrl(p.id) : null)
   }, [isAttorney])
 
   useEffect(() => { load() }, [load])
@@ -271,8 +270,25 @@ export default function Profile() {
               <div className="atty-hero-card">
                 <div className="atty-avatar-wrap">
                   <div className="atty-avatar">
-                    <span className="atty-avatar-initials">{initials}</span>
+                    {photoPreview
+                      ? <img src={photoPreview} alt="profile" className="atty-avatar-img" />
+                      : <span className="atty-avatar-initials">{initials}</span>}
+                    {photoLoading && <div className="atty-avatar-overlay"><Loader2 size={20} className="spin" /></div>}
                   </div>
+                  <button className="atty-photo-btn" onClick={() => setShowPhotoMenu(v => !v)} title="Edit photo">
+                    <Camera size={13} />
+                  </button>
+                  {showPhotoMenu && (
+                    <div className="photo-menu-dropdown">
+                      <button onClick={() => { setShowPhotoMenu(false); photoRef.current?.click() }}>
+                        <Upload size={13} /> Upload New Photo
+                      </button>
+                      <button onClick={() => setShowPhotoMenu(false)}>
+                        <X size={13} /> Cancel
+                      </button>
+                    </div>
+                  )}
+                  <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handlePhotoSelect} />
                 </div>
                 <h2 className="atty-hero-name">{form.fullname || user?.fullname}</h2>
                 <div className="atty-hero-badges">
@@ -684,9 +700,19 @@ export default function Profile() {
                     : <span className="atty-avatar-initials">{initials}</span>}
                   {photoLoading && <div className="atty-avatar-overlay"><Loader2 size={20} className="spin" /></div>}
                 </div>
-                <button className="atty-photo-btn" onClick={() => photoRef.current?.click()} title="Upload photo">
+                <button className="atty-photo-btn" onClick={() => setShowPhotoMenu(v => !v)} title="Edit photo">
                   <Camera size={13} />
                 </button>
+                {showPhotoMenu && (
+                  <div className="photo-menu-dropdown">
+                    <button onClick={() => { setShowPhotoMenu(false); photoRef.current?.click() }}>
+                      <Upload size={13} /> Upload New Photo
+                    </button>
+                    <button onClick={() => setShowPhotoMenu(false)}>
+                      <X size={13} /> Cancel
+                    </button>
+                  </div>
+                )}
                 <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handlePhotoSelect} />
               </div>
 

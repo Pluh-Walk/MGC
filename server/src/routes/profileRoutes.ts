@@ -18,6 +18,7 @@ import {
   getClientDocuments,
   clientUploadDocument,
   getAttorneyPublicProfile,
+  listAttorneys,
 } from '../controllers/profileController'
 import { authMiddleware, requireRole } from '../middleware/auth'
 
@@ -91,6 +92,8 @@ router.get('/client/activity',  requireRole('client'), getClientActivity)
 router.get('/client/documents', requireRole('client'), getClientDocuments)
 router.post('/client/documents', requireRole('client'), clientDocUpload.single('file'), clientUploadDocument)
 
+// Client: browse all verified attorneys
+router.get('/attorneys', requireRole('client'), listAttorneys)
 // Client: view assigned attorney's public profile
 router.get('/attorneys/:id', requireRole('client'), getAttorneyPublicProfile)
 

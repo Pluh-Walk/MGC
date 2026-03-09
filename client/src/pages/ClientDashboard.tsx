@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Scale, FileText, Clock, MessageSquare, HelpCircle, FolderOpen, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
-  Trash2, MapPin, ChevronRight, Briefcase, Calendar,
+  Trash2, MapPin, ChevronRight, Briefcase, Calendar, Users,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
@@ -84,7 +84,6 @@ export default function ClientDashboard() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // ── Load hearings ────────────────────────────────────
   const loadHearings = useCallback(async () => {
     setLoadingH(true)
     try { const r = await hearingsApi.list(); setHearings(r.data.data) }
@@ -266,6 +265,9 @@ export default function ClientDashboard() {
             </button>
             <button className="sidebar-btn" onClick={() => navigate('/announcements')}>
               <Megaphone size={17} /> Announcements
+            </button>
+            <button className="sidebar-btn" onClick={() => navigate('/attorneys')}>
+              <Users size={17} /> Attorneys
             </button>
             <button className="sidebar-btn" disabled style={{ opacity: 0.5, cursor: 'not-allowed' }}>
               <HelpCircle size={17} /> Support

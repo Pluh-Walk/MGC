@@ -46,6 +46,7 @@ export const profileApi = {
   getClientCases: (id: number) => api.get(`/profile/clients/${id}/cases`),
   updateClient: (id: number, data: object) => api.put(`/profile/clients/${id}`, data),
   getAttorney: (id: number) => api.get(`/profile/attorneys/${id}`),
+  listAttorneys: () => api.get('/profile/attorneys'),
   // Attorney-specific
   stats:      () => api.get('/profile/attorney/stats'),
   activity:   () => api.get('/profile/attorney/activity'),

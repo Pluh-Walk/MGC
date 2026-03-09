@@ -11,6 +11,7 @@ import Cases from './pages/Cases'
 import CaseDetail from './pages/CaseDetail'
 import Clients from './pages/Clients'
 import ClientView from './pages/ClientView'
+import Attorneys from './pages/Attorneys'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import Hearings from './pages/Hearings'
@@ -63,6 +64,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['client']}>
                 <ClientDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attorneys"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <Attorneys />
               </ProtectedRoute>
             }
           />

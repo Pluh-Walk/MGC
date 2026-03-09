@@ -320,9 +320,11 @@ export const uploadProfilePhoto = async (req: Request, res: Response): Promise<v
     const file = req.file
     if (!file) { res.status(400).json({ success: false, message: 'No image uploaded.' }); return }
 
+    const table = user.role === 'client' ? 'client_profiles' : 'attorney_profiles'
+
     // Delete old photo if exists
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT photo_path FROM attorney_profiles WHERE user_id = ?', [user.id])
+      `SELECT photo_path FROM ${table} WHERE user_id = ?`, [user.id])
     if (rows[0]?.photo_path) {
       const oldPath = path.join(process.cwd(), rows[0].photo_path)
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
@@ -330,7 +332,7 @@ export const uploadProfilePhoto = async (req: Request, res: Response): Promise<v
 
     const relPath = `uploads/profiles/${file.filename}`
     await pool.query(
-      `INSERT INTO attorney_profiles (user_id, photo_path)
+      `INSERT INTO ${table} (user_id, photo_path)
        VALUES (?, ?)
        ON DUPLICATE KEY UPDATE photo_path = VALUES(photo_path)`,
       [user.id, relPath]
@@ -345,12 +347,40 @@ export const uploadProfilePhoto = async (req: Request, res: Response): Promise<v
 export const serveProfilePhoto = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params
-    const [rows] = await pool.query<RowDataPacket[]>(
+    // Check attorney_profiles first, then client_profiles
+    let photoPath: string | null = null
+    const [attyRows] = await pool.query<RowDataPacket[]>(
       'SELECT photo_path FROM attorney_profiles WHERE user_id = ?', [userId])
-    if (!rows[0]?.photo_path) { res.status(404).json({ success: false, message: 'No photo.' }); return }
-    const filePath = path.join(process.cwd(), rows[0].photo_path)
+    if (attyRows[0]?.photo_path) {
+      photoPath = attyRows[0].photo_path
+    } else {
+      const [clientRows] = await pool.query<RowDataPacket[]>(
+        'SELECT photo_path FROM client_profiles WHERE user_id = ?', [userId])
+      if (clientRows[0]?.photo_path) photoPath = clientRows[0].photo_path
+    }
+    if (!photoPath) { res.status(404).json({ success: false, message: 'No photo.' }); return }
+    const filePath = path.join(process.cwd(), photoPath)
     if (!fs.existsSync(filePath)) { res.status(404).json({ success: false, message: 'File not found.' }); return }
     res.sendFile(filePath)
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Get Attorney Public Profile (client only) ────────────
+// ─── List All Attorneys (client-accessible directory) ──────
+export const listAttorneys = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname,
+              ap.law_firm, ap.specializations, ap.years_experience,
+              ap.availability, ap.photo_path
+       FROM users u
+       INNER JOIN attorney_profiles ap ON ap.user_id = u.id
+       WHERE u.role = 'attorney' AND u.ibp_verified = 1
+       ORDER BY u.fullname ASC`
+    )
+    res.json({ success: true, data: rows })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
   }
