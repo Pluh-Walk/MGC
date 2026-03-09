@@ -112,7 +112,7 @@ export default function Attorneys() {
                 ? a.specializations.split(',').map(s => s.trim()).filter(Boolean)
                 : []
               return (
-                <div key={a.id} className="atty-dir-card">
+                <div key={a.id} className="atty-dir-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/attorneys/${a.id}`)}>  
                   <div className="atty-dir-avatar">
                     {!imgErrors[a.id] ? (
                       <img

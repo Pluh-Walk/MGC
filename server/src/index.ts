@@ -12,6 +12,7 @@ import passwordResetRoutes from './routes/passwordResetRoutes'
 import hearingRoutes from './routes/hearingRoutes'
 import announcementRoutes from './routes/announcementRoutes'
 import messageRoutes from './routes/messageRoutes'
+import reviewRoutes from './routes/reviewRoutes'
 
 dotenv.config()
 
@@ -22,6 +23,7 @@ const PORT = process.env.PORT || 5000
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
@@ -56,6 +58,7 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/hearings', hearingRoutes)
 app.use('/api/announcements', announcementRoutes)
 app.use('/api/messages', messageRoutes)
+app.use('/api/reviews', reviewRoutes)
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {

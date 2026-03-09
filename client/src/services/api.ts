@@ -46,6 +46,7 @@ export const profileApi = {
   getClientCases: (id: number) => api.get(`/profile/clients/${id}/cases`),
   updateClient: (id: number, data: object) => api.put(`/profile/clients/${id}`, data),
   getAttorney: (id: number) => api.get(`/profile/attorneys/${id}`),
+  getAttorneyPublicStats: (id: number) => api.get(`/profile/attorneys/${id}/stats`),
   listAttorneys: () => api.get('/profile/attorneys'),
   // Attorney-specific
   stats:      () => api.get('/profile/attorney/stats'),
@@ -68,6 +69,15 @@ export const profileApi = {
     return api.post('/profile/photo', fd, { headers: { 'Content-Type': undefined } })
   },
   photoUrl: (userId: number) => `/api/profile/photo/${userId}`,
+}
+
+// ─── Reviews ───────────────────────────────────
+export const reviewsApi = {
+  getAttorneyReviews: (attorneyId: number) => api.get(`/reviews/attorneys/${attorneyId}`),
+  getMyReview:        (attorneyId: number) => api.get(`/reviews/attorneys/${attorneyId}/mine`),
+  submitReview:       (attorneyId: number, data: { rating: number; comment: string }) =>
+    api.post(`/reviews/attorneys/${attorneyId}`, data),
+  deleteReview:       (attorneyId: number) => api.delete(`/reviews/attorneys/${attorneyId}`),
 }
 
 // ─── Documents ────────────────────────────────────────────

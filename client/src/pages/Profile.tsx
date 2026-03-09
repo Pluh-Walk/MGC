@@ -10,7 +10,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { profileApi, casesApi } from '../services/api'
+import { profileApi, casesApi, reviewsApi } from '../services/api'
 
 const AVAIL_OPTIONS = [
   { value: 'available', label: 'Available',   color: '#22c55e' },
@@ -18,7 +18,7 @@ const AVAIL_OPTIONS = [
   { value: 'offline',   label: 'Offline',     color: '#ef4444' },
 ] as const
 type Avail = 'available' | 'in_court' | 'offline'
-type Tab = 'professional' | 'activity' | 'security'
+type Tab = 'professional' | 'activity' | 'security' | 'reviews'
 type ClientTab = 'info' | 'cases' | 'activity' | 'security'
 
 const ACTION_LABEL: Record<string, string> = {
@@ -67,6 +67,14 @@ export default function Profile() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [photoLoading, setPhotoLoading] = useState(false)
   const [showPhotoMenu, setShowPhotoMenu] = useState(false)
+
+  // ── Attorney reviews ──────────────────────────────────
+  const [myReviews,      setMyReviews]      = useState<any[]>([])
+  const [myReviewsAvg,   setMyReviewsAvg]   = useState<number>(0)
+  const [myReviewsTotal, setMyReviewsTotal] = useState<number>(0)
+  const [reviewsLoaded,  setReviewsLoaded]  = useState(false)
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [rvImgErrors,    setRvImgErrors]    = useState<Record<number,boolean>>({})
 
   // ── Client extras ─────────────────────────────────────
   const [clientTab,      setClientTab]      = useState<ClientTab>('info')
@@ -145,6 +153,19 @@ export default function Profile() {
       setClientCases(Array.isArray(d) ? d : (d?.items ?? []))
     }).catch(() => {})
   }, [isAttorney])
+
+  useEffect(() => {
+    if (!isAttorney || tab !== 'reviews' || reviewsLoaded || !profile) return
+    setReviewsLoading(true)
+    reviewsApi.getAttorneyReviews(profile.id)
+      .then(res => {
+        setMyReviews(res.data.data)
+        setMyReviewsAvg(res.data.avg_rating ?? 0)
+        setMyReviewsTotal(res.data.total ?? 0)
+        setReviewsLoaded(true)
+      })
+      .finally(() => setReviewsLoading(false))
+  }, [isAttorney, tab, profile])
 
   // ── Profile completion (attorney) ─────────────────────
   const completion = (() => {
@@ -800,8 +821,9 @@ export default function Profile() {
           <div className="atty-main">
             {/* Tabs */}
             <div className="atty-tabs">
-              {([
+              {([  
                 { id: 'professional', icon: <ShieldCheck size={15}/>, label: 'Professional' },
+                { id: 'reviews',      icon: <Star size={15}/>,         label: 'Reviews' },
                 { id: 'activity',     icon: <Activity size={15}/>,    label: 'Activity' },
                 { id: 'security',     icon: <Lock size={15}/>,        label: 'Security' },
               ] as const).map(t => (
@@ -910,6 +932,78 @@ export default function Profile() {
                   <div><Mail size={13}/> {user?.email}</div>
                   <div><Clock size={13}/> Member since {profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</div>
                 </div>
+              </div>
+            )}
+
+            {/* ── Reviews Tab ── */}
+            {tab === 'reviews' && (
+              <div className="atty-section">
+                <div className="atty-section-header">
+                  <h3><Star size={18}/> My Reviews</h3>
+                </div>
+                {reviewsLoading ? (
+                  <div className="loading-state"><Loader2 size={28} className="spin" /></div>
+                ) : (
+                  <>
+                    <div className="rv-summary">
+                      <div className="rv-big-score">{Number(myReviewsAvg).toFixed(1)}</div>
+                      <div className="rv-summary-right">
+                        <div className="rv-stars-row">
+                          {[1,2,3,4,5].map(s => (
+                            <Star key={s} size={18}
+                              fill={myReviewsAvg >= s ? '#f59e0b' : 'none'}
+                              stroke='#f59e0b'
+                              opacity={myReviewsAvg >= s - 0.5 ? 1 : 0.3}
+                            />
+                          ))}
+                        </div>
+                        <span className="rv-total">{myReviewsTotal} review{myReviewsTotal !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+
+                    {myReviews.length === 0 ? (
+                      <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>No reviews yet.</p>
+                    ) : (
+                      <div className="rv-list">
+                        {myReviews.map((r: any) => {
+                          const ini = r.client_name.split(' ').slice(0,2).map((w: string) => w[0]).join('').toUpperCase()
+                          return (
+                            <div key={r.id} className="rv-item">
+                              <div className="rv-avatar">
+                                {!rvImgErrors[r.client_id] ? (
+                                  <img
+                                    src={profileApi.photoUrl(r.client_id)}
+                                    alt={r.client_name}
+                                    onError={() => setRvImgErrors(prev => ({ ...prev, [r.client_id]: true }))}
+                                  />
+                                ) : (
+                                  <span>{ini}</span>
+                                )}
+                              </div>
+                              <div className="rv-body">
+                                <div className="rv-header">
+                                  <span className="rv-name">{r.client_name}</span>
+                                  <div className="rv-stars-sm">
+                                    {[1,2,3,4,5].map(s => (
+                                      <Star key={s} size={13}
+                                        fill={r.rating >= s ? '#f59e0b' : 'none'}
+                                        stroke={r.rating >= s ? '#f59e0b' : 'var(--text-muted)'}
+                                      />
+                                    ))}
+                                  </div>
+                                  <span className="rv-date">
+                                    {new Date(r.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                  </span>
+                                </div>
+                                {r.comment && <p className="rv-comment">{r.comment}</p>}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

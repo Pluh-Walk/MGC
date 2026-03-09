@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
+import UserAvatar from '../components/UserAvatar'
 import { hearingsApi, announcementsApi, messagesApi } from '../services/api'
 
 const locales = { 'en-US': enUS }
@@ -48,9 +49,6 @@ interface Contact { id: number; fullname: string; username: string; role: string
 export default function AttorneyDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
-
-  const initials = user?.fullname
-    .split(' ').map((n) => n[0]).slice(0, 2).join('').toUpperCase() ?? 'AT'
 
   // ── Hearings state ───────────────────────────────────
   const [hearings, setHearings] = useState<Hearing[]>([])
@@ -253,7 +251,11 @@ export default function AttorneyDashboard() {
         {/* ─── Left Sidebar ─── */}
         <aside className="dash-sidebar">
           <div className="sidebar-user">
-            <div className="user-avatar">{initials}</div>
+            <UserAvatar
+              userId={user!.id}
+              fullname={user!.fullname}
+              className="user-avatar"
+            />
             <div className="user-meta">
               <strong>{user?.fullname}</strong>
               <span>@{user?.username}</span>

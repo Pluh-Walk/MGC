@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { casesApi } from '../services/api'
+import { casesApi, profileApi } from '../services/api'
 
 interface Client {
   id: number
@@ -25,6 +25,7 @@ export default function Clients() {
   const [filtered, setFiltered] = useState<Client[]>([])
   const [search,   setSearch]   = useState('')
   const [loading,  setLoading]  = useState(true)
+  const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     casesApi.clientList()
@@ -103,7 +104,13 @@ export default function Clients() {
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="atty-dir-avatar" style={{ background: 'linear-gradient(135deg, #1e3a5f, #2d5a9e)' }}>
-                    <span>{initials}</span>
+                    {imgErrors[c.id]
+                      ? <span>{initials}</span>
+                      : <img
+                          src={profileApi.photoUrl(c.id)}
+                          alt={c.fullname}
+                          onError={() => setImgErrors(prev => ({ ...prev, [c.id]: true }))}
+                        />}
                     {c.id_verified === 1 && (
                       <span className="atty-dir-avail-dot" style={{ background: '#22c55e' }} title="ID Verified" />
                     )}

@@ -70,6 +70,7 @@ export default function ClientView() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState<ViewTab>('info')
 
+  const [imgError,   setImgError]   = useState(false)
   const [attyImgErr, setAttyImgErr] = useState(false)
 
   useEffect(() => {
@@ -135,7 +136,14 @@ export default function ClientView() {
             <div className="atty-hero-card">
               <div className="atty-avatar-wrap">
                 <div className="atty-avatar">
-                  <span className="atty-avatar-initials">{mkInitials(profile.fullname)}</span>
+                  {imgError
+                    ? <span className="atty-avatar-initials">{mkInitials(profile.fullname)}</span>
+                    : <img
+                        src={profileApi.photoUrl(profile.id)}
+                        alt={profile.fullname}
+                        className="atty-avatar-img"
+                        onError={() => setImgError(true)}
+                      />}
                 </div>
               </div>
               <h2 className="atty-hero-name">{profile.fullname}</h2>

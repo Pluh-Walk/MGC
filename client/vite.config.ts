@@ -7,6 +7,12 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      '/api/notifications/stream': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
+      },
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,

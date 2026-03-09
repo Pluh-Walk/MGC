@@ -494,3 +494,31 @@ export const updateClientNotes = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ success: false, message: err.message })
   }
 }
+
+// ─── Attorney Public Case Stats (client-accessible) ─────────
+export const getAttorneyPublicStats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const [[active]]    = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status = 'active' AND deleted_at IS NULL`, [id])
+    const [[completed]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status IN ('closed','settled','dismissed') AND deleted_at IS NULL`, [id])
+    const [[pending]]   = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status = 'pending' AND deleted_at IS NULL`, [id])
+    const [[total]]     = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND deleted_at IS NULL`, [id])
+    const [[clients]]   = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(DISTINCT client_id) AS cnt FROM cases WHERE attorney_id = ? AND deleted_at IS NULL`, [id])
+
+    res.json({ success: true, data: {
+      active_cases:    active.cnt,
+      completed_cases: completed.cnt,
+      pending_cases:   pending.cnt,
+      total_cases:     total.cnt,
+      total_clients:   clients.cnt,
+    }})
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}

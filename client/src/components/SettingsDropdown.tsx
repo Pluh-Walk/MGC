@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Settings, UserCircle, LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import UserAvatar from './UserAvatar'
 
 export default function SettingsDropdown() {
   const { user, logout } = useAuth()
@@ -38,7 +39,13 @@ export default function SettingsDropdown() {
       {open && (
         <div className="settings-dropdown">
           <div className="settings-dropdown-header">
-            <div className="sd-avatar">{initials}</div>
+            {user && (
+              <UserAvatar
+                userId={user.id}
+                fullname={user.fullname}
+                className="sd-avatar"
+              />
+            )}
             <div className="sd-user-info">
               <strong>{user?.fullname}</strong>
               <span>@{user?.username}</span>
