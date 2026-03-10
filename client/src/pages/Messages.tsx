@@ -9,6 +9,35 @@ import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import { messagesApi } from '../services/api'
 
+// Loads an image via the authenticated API and displays it as a blob URL
+function AuthImage({ messageId, alt }: { messageId: number; alt: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    let url = ''
+    messagesApi.getAttachment(messageId)
+      .then(res => {
+        url = URL.createObjectURL(res.data)
+        setSrc(url)
+      })
+      .catch(() => {})
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [messageId])
+
+  if (!src) {
+    return (
+      <div className="msg-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 60, background: 'rgba(255,255,255,0.05)', borderRadius: 8 }}>
+        <Loader2 size={16} className="spin" />
+      </div>
+    )
+  }
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="msg-img-link">
+      <img src={src} alt={alt} className="msg-img" />
+    </a>
+  )
+}
+
 interface Conversation {
   partner_id: number
   partner_name: string
@@ -239,20 +268,35 @@ export default function Messages() {
   // ── Render in-bubble attachment ─────────────────────────
   const renderAttachment = (m: Message) => {
     if (!m.attachment_name) return null
-    const url = messagesApi.attachmentUrl(m.id)
     if (m.attachment_mime?.startsWith('image/')) {
-      return (
-        <a href={url} target="_blank" rel="noreferrer" className="msg-img-link">
-          <img src={url} alt={m.attachment_name} className="msg-img" />
-        </a>
-      )
+      return <AuthImage messageId={m.id} alt={m.attachment_name} />
     }
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="msg-file-card">
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); handleDownloadAttachment(m) }}
+        className="msg-file-card"
+      >
         <FileText size={15} />
         <span>{m.attachment_name}</span>
       </a>
     )
+  }
+
+  const handleDownloadAttachment = async (m: Message) => {
+    try {
+      const res = await messagesApi.getAttachment(m.id)
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = m.attachment_name || 'download'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to download attachment.')
+    }
   }
 
   const filteredConvs = conversations.filter(c =>

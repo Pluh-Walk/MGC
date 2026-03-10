@@ -145,6 +145,9 @@ export const messagesApi = {
 
   contacts: () => api.get('/messages/contacts'),
 
+  getAttachment: (id: number) =>
+    api.get(`/messages/${id}/attachment`, { responseType: 'blob' }),
+
   attachmentUrl: (id: number) => {
     const token = localStorage.getItem('token') ?? ''
     return `/api/messages/${id}/attachment?token=${encodeURIComponent(token)}`

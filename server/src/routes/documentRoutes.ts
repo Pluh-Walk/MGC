@@ -10,23 +10,22 @@ import upload from '../config/upload'
 
 const router = Router()
 
-router.use(authMiddleware)
-
 // Upload — attorney only
 router.post(
   '/cases/:caseId/documents',
+  authMiddleware,
   requireRole('attorney'),
   upload.single('file'),
   uploadDocument
 )
 
 // List documents for a case — both roles
-router.get('/cases/:caseId/documents', getCaseDocuments)
+router.get('/cases/:caseId/documents', authMiddleware, getCaseDocuments)
 
 // Download a document — both roles (controller enforces visibility)
-router.get('/documents/:id/download', downloadDocument)
+router.get('/documents/:id/download', authMiddleware, downloadDocument)
 
 // Soft delete — attorney only
-router.delete('/documents/:id', requireRole('attorney'), deleteDocument)
+router.delete('/documents/:id', authMiddleware, requireRole('attorney'), deleteDocument)
 
 export default router
