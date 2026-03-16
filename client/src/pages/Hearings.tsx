@@ -63,6 +63,7 @@ export default function Hearings() {
   const [error,     setError]     = useState('')
 
   const isAttorney = user?.role === 'attorney'
+  const canManage = user?.role === 'attorney' || user?.role === 'secretary'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -77,13 +78,13 @@ export default function Hearings() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (!isAttorney) return
+    if (!canManage) return
     casesApi.list().then(r =>
       setCases(r.data.data.map((c: any) => ({
         id: c.id, case_number: c.case_number, title: c.title
       })))
     )
-  }, [isAttorney])
+  }, [canManage])
 
   const openCreate = () => {
     setEditing(null)
@@ -195,7 +196,7 @@ export default function Hearings() {
                 <List size={14} /> List
               </button>
             </div>
-            {isAttorney && (
+            {canManage && (
               <button className="btn-primary" onClick={openCreate}>
                 <Plus size={16} /> Schedule Hearing
               </button>
@@ -220,7 +221,7 @@ export default function Hearings() {
                   onView={(v) => setCalView(v)}
                   style={{ height: 600 }}
                   eventPropGetter={eventStyleGetter}
-                  onSelectEvent={(ev: any) => isAttorney && openEdit(ev.resource)}
+                  onSelectEvent={(ev: any) => canManage && openEdit(ev.resource)}
                   popup
                 />
               </div>
@@ -257,10 +258,12 @@ export default function Hearings() {
                         )}
                       </div>
                     </div>
-                    {isAttorney && (
+                    {canManage && (
                       <div className="hearing-actions">
                         <button className="btn-sm" onClick={() => openEdit(h)}>Edit</button>
-                        <button className="btn-sm danger" onClick={() => handleDelete(h.id)}>Cancel</button>
+                        {isAttorney && (
+                          <button className="btn-sm danger" onClick={() => handleDelete(h.id)}>Cancel</button>
+                        )}
                       </div>
                     )}
                   </div>

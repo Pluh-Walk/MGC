@@ -9,7 +9,7 @@ import {
   downloadAttachment,
   getContacts,
 } from '../controllers/messageController'
-import { authMiddleware, sseVerifyToken } from '../middleware/auth'
+import { authMiddleware, sseVerifyToken, requireAttorneyScope } from '../middleware/auth'
 import { messageUpload } from '../config/upload'
 
 const router = Router()
@@ -18,6 +18,7 @@ const router = Router()
 router.get('/:id/attachment', sseVerifyToken, downloadAttachment)
 
 router.use(authMiddleware)
+router.use(requireAttorneyScope)
 
 router.get('/contacts',                    getContacts)
 router.get('/',                            getConversations)

@@ -56,8 +56,14 @@ export default function Login() {
       }
 
       setSuccess('Login successful! Redirecting…')
+      const dashboards: Record<string, string> = {
+        attorney:  '/dashboard/attorney',
+        client:    '/dashboard/client',
+        admin:     '/dashboard/admin',
+        secretary: '/dashboard/secretary',
+      }
       setTimeout(() => {
-        navigate(user.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client')
+        navigate(dashboards[user.role] || '/dashboard/client')
       }, 800)
     } catch (err: unknown) {
       const msg =

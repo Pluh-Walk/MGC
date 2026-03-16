@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import pool from '../config/db'
 import { audit } from '../utils/audit'
+import { getEffectiveAttorneyId } from '../utils/scope'
 
 // ─── Get My Profile ─────────────────────────────────────────
 export const getMyProfile = async (req: Request, res: Response): Promise<void> => {
@@ -34,6 +35,16 @@ export const getMyProfile = async (req: Request, res: Response): Promise<void> =
     } else if (user.role === 'attorney') {
       const [profileRows] = await pool.query<RowDataPacket[]>(
         `SELECT * FROM attorney_profiles WHERE user_id = ?`,
+        [user.id]
+      )
+      profile = profileRows[0] ?? null
+    } else if (user.role === 'secretary') {
+      const [profileRows] = await pool.query<RowDataPacket[]>(
+        `SELECT sp.*, u.fullname AS attorney_name
+         FROM secretary_profiles sp
+         LEFT JOIN attorney_secretaries als ON als.secretary_id = sp.user_id AND als.status = 'active'
+         LEFT JOIN users u ON u.id = als.attorney_id
+         WHERE sp.user_id = ?`,
         [user.id]
       )
       profile = profileRows[0] ?? null
@@ -106,6 +117,13 @@ export const updateMyProfile = async (req: Request, res: Response): Promise<void
         [user.id, phone ?? null, office_address ?? null, ibp_number ?? null,
          law_firm ?? null, specializations ?? null, court_admissions ?? null,
          years_experience ?? null, bio ?? null, availability ?? 'available']
+      )
+    } else if (user.role === 'secretary') {
+      await pool.query<ResultSetHeader>(
+        `INSERT INTO secretary_profiles (user_id, phone)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE phone = VALUES(phone)`,
+        [user.id, phone ?? null]
       )
     }
 
@@ -250,16 +268,17 @@ export const clientUploadDocument = async (req: Request, res: Response): Promise
 export const getAttorneyStats = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
+    const attorneyId = getEffectiveAttorneyId(user)
     const [[active]]   = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status = 'active'   AND deleted_at IS NULL`, [user.id])
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status = 'active'   AND deleted_at IS NULL`, [attorneyId])
     const [[closed]]   = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status IN ('closed','archived') AND deleted_at IS NULL`, [user.id])
+      `SELECT COUNT(*) AS cnt FROM cases WHERE attorney_id = ? AND status IN ('closed','archived') AND deleted_at IS NULL`, [attorneyId])
     const [[clients]]  = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(DISTINCT client_id) AS cnt FROM cases WHERE attorney_id = ? AND deleted_at IS NULL`, [user.id])
+      `SELECT COUNT(DISTINCT client_id) AS cnt FROM cases WHERE attorney_id = ? AND deleted_at IS NULL`, [attorneyId])
     const [[upcoming]] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS cnt FROM hearings h
        JOIN cases c ON c.id = h.case_id
-       WHERE c.attorney_id = ? AND h.scheduled_at >= NOW() AND h.status = 'scheduled'`, [user.id])
+       WHERE c.attorney_id = ? AND h.scheduled_at >= NOW() AND h.status = 'scheduled'`, [attorneyId])
     res.json({ success: true, data: {
       active_cases: active.cnt, closed_cases: closed.cnt,
       clients: clients.cnt, upcoming_hearings: upcoming.cnt,
@@ -320,7 +339,9 @@ export const uploadProfilePhoto = async (req: Request, res: Response): Promise<v
     const file = req.file
     if (!file) { res.status(400).json({ success: false, message: 'No image uploaded.' }); return }
 
-    const table = user.role === 'client' ? 'client_profiles' : 'attorney_profiles'
+    const table = user.role === 'client' ? 'client_profiles'
+                : user.role === 'secretary' ? 'secretary_profiles'
+                : 'attorney_profiles'
 
     // Delete old photo if exists
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -347,7 +368,7 @@ export const uploadProfilePhoto = async (req: Request, res: Response): Promise<v
 export const serveProfilePhoto = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params
-    // Check attorney_profiles first, then client_profiles
+    // Check attorney_profiles first, then client_profiles, then secretary_profiles
     let photoPath: string | null = null
     const [attyRows] = await pool.query<RowDataPacket[]>(
       'SELECT photo_path FROM attorney_profiles WHERE user_id = ?', [userId])
@@ -356,7 +377,13 @@ export const serveProfilePhoto = async (req: Request, res: Response): Promise<vo
     } else {
       const [clientRows] = await pool.query<RowDataPacket[]>(
         'SELECT photo_path FROM client_profiles WHERE user_id = ?', [userId])
-      if (clientRows[0]?.photo_path) photoPath = clientRows[0].photo_path
+      if (clientRows[0]?.photo_path) {
+        photoPath = clientRows[0].photo_path
+      } else {
+        const [secRows] = await pool.query<RowDataPacket[]>(
+          'SELECT photo_path FROM secretary_profiles WHERE user_id = ?', [userId])
+        if (secRows[0]?.photo_path) photoPath = secRows[0].photo_path
+      }
     }
     if (!photoPath) { res.status(404).json({ success: false, message: 'No photo.' }); return }
     const filePath = path.join(process.cwd(), photoPath)

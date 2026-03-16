@@ -4,14 +4,15 @@ import {
   createAnnouncement,
   deleteAnnouncement,
 } from '../controllers/announcementController'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
 const router = Router()
 
 router.use(authMiddleware)
+router.use(requireAttorneyScope)
 
 router.get('/',    getAnnouncements)
-router.post('/',   requireRole('attorney'), createAnnouncement)
-router.delete('/:id', requireRole('attorney'), deleteAnnouncement)
+router.post('/',   requireRole('attorney', 'admin', 'secretary'), createAnnouncement)
+router.delete('/:id', requireRole('attorney', 'admin'), deleteAnnouncement)
 
 export default router

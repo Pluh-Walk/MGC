@@ -8,7 +8,7 @@ import {
   addNote,
   getClientList,
 } from '../controllers/caseController'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
 const router = Router()
 
@@ -20,12 +20,12 @@ router.get('/clients', requireRole('attorney'), getClientList)
 
 // Cases CRUD
 router.post('/', requireRole('attorney'), createCase)
-router.get('/', getCases)                              // both roles
-router.get('/:id', getCaseById)                        // both roles
-router.put('/:id', requireRole('attorney'), updateCase)
+router.get('/', requireRole('attorney', 'client', 'admin', 'secretary'), requireAttorneyScope, getCases)
+router.get('/:id', requireRole('attorney', 'client', 'admin', 'secretary'), requireAttorneyScope, getCaseById)
+router.put('/:id', requireRole('attorney', 'secretary'), requireAttorneyScope, updateCase)
 router.delete('/:id', requireRole('attorney'), deleteCase)
 
-// Notes
-router.post('/:id/notes', requireRole('attorney'), addNote)
+// Notes (attorney + secretary)
+router.post('/:id/notes', requireRole('attorney', 'secretary'), requireAttorneyScope, addNote)
 
 export default router

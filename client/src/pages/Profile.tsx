@@ -50,7 +50,9 @@ export default function Profile() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const photoRef = useRef<HTMLInputElement>(null)
-  const dashPath = user?.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'
+  const dashPath = user?.role === 'attorney' ? '/dashboard/attorney'
+    : user?.role === 'secretary' ? '/dashboard/secretary'
+    : '/dashboard/client'
 
   // ── Core state ────────────────────────────────────────
   const [profile, setProfile] = useState<any>(null)
@@ -80,7 +82,6 @@ export default function Profile() {
   const [clientTab,      setClientTab]      = useState<ClientTab>('info')
   const [clientStats,    setClientStats]    = useState<any>(null)
   const [clientActivity, setClientActivity] = useState<any[]>([])
-  const [clientCases,    setClientCases]    = useState<any[]>([])
   const [notifs, setNotifs] = useState({ email: true, case_updates: true, hearings: true, messages: true })
   const [attyImgErr,   setAttyImgErr]   = useState(false)
 
@@ -101,6 +102,7 @@ export default function Profile() {
   const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   const isAttorney = user?.role === 'attorney'
+  const isSecretary = user?.role === 'secretary'
 
   // ── Load ──────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -148,10 +150,7 @@ export default function Profile() {
     if (isAttorney) return
     profileApi.clientStats().then(r => setClientStats(r.data.data)).catch(() => {})
     profileApi.clientActivity().then(r => setClientActivity(r.data.data)).catch(() => {})
-    casesApi.list().then(r => {
-      const d = r.data.data
-      setClientCases(Array.isArray(d) ? d : (d?.items ?? []))
-    }).catch(() => {})
+    casesApi.list().catch(() => {})
   }, [isAttorney])
 
   useEffect(() => {
@@ -258,6 +257,200 @@ export default function Profile() {
 
   const initials = (user?.fullname || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
   const availInfo = AVAIL_OPTIONS.find(a => a.value === avail)!
+
+  // ════════════════════════════════════════════════════════
+  // SECRETARY PROFILE
+  // ════════════════════════════════════════════════════════
+  if (isSecretary) {
+    return (
+      <div className="dashboard">
+        <nav className="dash-nav">
+          <div className="dash-nav-brand"><Scale size={22} className="nav-icon" />MGC Law System</div>
+          <div className="dash-nav-right">
+            <span className="role-badge secretary">Secretary</span>
+            <NotificationBell /><SettingsDropdown />
+          </div>
+        </nav>
+
+        <main className="dash-content">
+          <button className="btn-back" onClick={() => navigate(dashPath)}><ArrowLeft size={16} />Back to Dashboard</button>
+
+          <div className="atty-profile-layout">
+            {/* Sidebar */}
+            <aside className="atty-sidebar">
+              <div className="atty-hero-card">
+                <div className="atty-avatar-wrap">
+                  <div className="atty-avatar">
+                    {photoPreview
+                      ? <img src={photoPreview} alt="profile" className="atty-avatar-img" />
+                      : <span className="atty-avatar-initials">{initials}</span>}
+                    {photoLoading && <div className="atty-avatar-overlay"><Loader2 size={20} className="spin" /></div>}
+                  </div>
+                  <button className="atty-photo-btn" onClick={() => setShowPhotoMenu(v => !v)} title="Edit photo">
+                    <Camera size={13} />
+                  </button>
+                  {showPhotoMenu && (
+                    <div className="photo-menu-dropdown">
+                      <button onClick={() => { setShowPhotoMenu(false); photoRef.current?.click() }}>
+                        <Upload size={13} /> Upload New Photo
+                      </button>
+                      <button onClick={() => setShowPhotoMenu(false)}>
+                        <X size={13} /> Cancel
+                      </button>
+                    </div>
+                  )}
+                  <input ref={photoRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handlePhotoSelect} />
+                </div>
+                <h2 className="atty-hero-name">{form.fullname || user?.fullname}</h2>
+                <div className="atty-hero-badges">
+                  <span className="role-badge secretary">Secretary</span>
+                </div>
+                {user?.attorney_name && (
+                  <p className="atty-hero-firm" style={{ marginTop: '0.5rem' }}>
+                    <Users size={13} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
+                    Assisting <strong>{user.attorney_name}</strong>
+                  </p>
+                )}
+              </div>
+
+              <div className="atty-quick-actions">
+                <p className="quick-actions-label">Quick Actions</p>
+                <button className="quick-action-btn" onClick={() => navigate('/cases')}><Briefcase size={15} />View Cases</button>
+                <button className="quick-action-btn" onClick={() => navigate('/hearings')}><Calendar size={15} />Hearings</button>
+                <button className="quick-action-btn" onClick={() => navigate('/messages')}><MessageSquare size={15} />Messages</button>
+                <button className="quick-action-btn" onClick={() => navigate('/announcements')}><Bell size={15} />Announcements</button>
+              </div>
+            </aside>
+
+            {/* Main */}
+            <div className="atty-main">
+              <div className="atty-tabs">
+                {([
+                  { id: 'info',     icon: <UserCircle size={15}/>, label: 'Personal Info' },
+                  { id: 'activity', icon: <Activity size={15}/>,   label: 'Activity'     },
+                  { id: 'security', icon: <Lock size={15}/>,       label: 'Security'     },
+                ] as const).map(t => (
+                  <button key={t.id} className={`atty-tab${clientTab === t.id ? ' active' : ''}`}
+                    onClick={() => setClientTab(t.id as ClientTab)}>
+                    {t.icon}{t.label}
+                  </button>
+                ))}
+              </div>
+
+              {msg && (
+                <div className={`alert ${msg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '1rem' }}>
+                  {msg.ok ? <CheckCircle2 size={15}/> : <AlertCircle size={15}/>} {msg.text}
+                </div>
+              )}
+
+              {/* Info Tab */}
+              {clientTab === 'info' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><UserCircle size={18}/> Personal Information</h3>
+                    {!editing
+                      ? <button className="btn-primary" onClick={() => setEditing(true)}><Edit2 size={14}/> Edit</button>
+                      : <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button className="btn-secondary" onClick={() => { setEditing(false); load() }}>Cancel</button>
+                          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+                            {saving ? <Loader2 size={14} className="spin"/> : <Save size={14}/>}
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>}
+                  </div>
+                  <div className="atty-form-grid">
+                    <div className="atty-field">
+                      <label><UserCircle size={14}/> Full Name</label>
+                      {editing ? <input className="profile-input" value={form.fullname} onChange={e => setForm({...form, fullname: e.target.value})} /> : <span>{form.fullname || '—'}</span>}
+                    </div>
+                    <div className="atty-field">
+                      <label><Phone size={14}/> Contact Number</label>
+                      {editing ? <input className="profile-input" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="+63 912 345 6789" /> : <span>{form.phone || '—'}</span>}
+                    </div>
+                    <div className="atty-field full-width">
+                      <label><MapPin size={14}/> Address</label>
+                      {editing ? <textarea className="profile-input" rows={2} value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Street, City" /> : <span>{form.address || '—'}</span>}
+                    </div>
+                  </div>
+                  <div className="atty-identity-row">
+                    <div><AtSign size={13}/> <strong>@{user?.username}</strong></div>
+                    <div><Mail size={13}/> {user?.email}</div>
+                    <div><Clock size={13}/> Member since {profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Activity Tab */}
+              {clientTab === 'activity' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><Activity size={18}/> Recent Activity</h3>
+                  </div>
+                  {clientActivity.length === 0 ? (
+                    <p className="empty-state-sm">No activity recorded yet.</p>
+                  ) : (
+                    <div className="activity-feed">
+                      {clientActivity.map((a, i) => (
+                        <div key={i} className="activity-item">
+                          <div className="activity-dot" />
+                          <div className="activity-body">
+                            <span>{ACTION_LABEL[a.action] || CLIENT_ACTION_LABEL[a.action] || a.action}</span>
+                            {a.details && <small>{a.details}</small>}
+                            <time>{new Date(a.created_at).toLocaleString()}</time>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Security Tab */}
+              {clientTab === 'security' && (
+                <div className="atty-section">
+                  <div className="atty-section-header">
+                    <h3><Lock size={18}/> Security</h3>
+                  </div>
+                  <div className="atty-security-section">
+                    <h4>Change Password</h4>
+                    {pwMsg && (
+                      <div className={`alert ${pwMsg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '0.75rem' }}>
+                        {pwMsg.ok ? <CheckCircle2 size={14}/> : <AlertCircle size={14}/>} {pwMsg.text}
+                      </div>
+                    )}
+                    <div className="atty-form-grid">
+                      <div className="atty-field full-width">
+                        <label><Lock size={14}/> Current Password</label>
+                        <input type="password" className="profile-input" value={pwForm.currentPassword}
+                          onChange={e => setPwForm({...pwForm, currentPassword: e.target.value})} placeholder="Enter current password" />
+                      </div>
+                      <div className="atty-field">
+                        <label><Lock size={14}/> New Password</label>
+                        <input type="password" className="profile-input" value={pwForm.newPassword}
+                          onChange={e => setPwForm({...pwForm, newPassword: e.target.value})} placeholder="Minimum 8 characters" />
+                      </div>
+                      <div className="atty-field">
+                        <label><Lock size={14}/> Confirm New Password</label>
+                        <input type="password" className="profile-input" value={pwForm.confirmNew}
+                          onChange={e => setPwForm({...pwForm, confirmNew: e.target.value})} placeholder="Re-enter new password" />
+                      </div>
+                    </div>
+                    <button className="btn-primary" style={{ marginTop: '0.5rem' }} onClick={handlePasswordChange} disabled={pwSaving}>
+                      {pwSaving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Update Password</>}
+                    </button>
+                  </div>
+                  <div className="atty-security-info">
+                    <h4>Account Info</h4>
+                    <div className="security-info-row"><span>Account created:</span><span>{profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</span></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   // ════════════════════════════════════════════════════════
   // CLIENT PROFILE

@@ -33,7 +33,7 @@ export default function Announcements() {
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState('')
 
-  const isAttorney = user?.role === 'attorney'
+  const canManage = user?.role === 'attorney' || user?.role === 'secretary'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -48,13 +48,13 @@ export default function Announcements() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (!isAttorney) return
+    if (!canManage) return
     casesApi.list().then(r =>
       setCases(r.data.data.map((c: any) => ({
         id: c.id, case_number: c.case_number, title: c.title,
       })))
     )
-  }, [isAttorney])
+  }, [canManage])
 
   const openCreate = () => {
     setForm({ title: '', body: '', case_id: '' })
@@ -113,7 +113,7 @@ export default function Announcements() {
             <Megaphone size={20} style={{ marginRight: '0.5rem', color: 'var(--accent)' }} />
             Announcements
           </h2>
-          {isAttorney && (
+          {canManage && (
             <div className="page-header-actions">
               <button className="btn-primary" onClick={openCreate}>
                 <Plus size={16} /> New Announcement
@@ -147,7 +147,7 @@ export default function Announcements() {
                       {new Date(a.created_at).toLocaleDateString()}
                     </span>
                   </div>
-                  {isAttorney && (
+                  {canManage && (
                     <button
                       className="btn-icon danger"
                       onClick={() => handleDelete(a.id)}

@@ -4,10 +4,44 @@ import jwt from 'jsonwebtoken'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import Tesseract from 'tesseract.js'
 import pool from '../config/db'
+import { audit } from '../utils/audit'
 
 // ─── helpers ───────────────────────────────────────────────
 
 const sanitize = (str: string) => str.trim().replace(/[<>"']/g, '')
+
+/** Log a login attempt (fire-and-forget) */
+const logLoginAttempt = async (email: string, ip: string, success: boolean) => {
+  try {
+    await pool.query(
+      'INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)',
+      [email, ip, success]
+    )
+  } catch { /* never crash on logging */ }
+}
+
+/** Check if the account is locked out due to too many failed attempts */
+const isLockedOut = async (email: string): Promise<boolean> => {
+  try {
+    const [[settings]] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         (SELECT setting_value FROM system_settings WHERE setting_key = 'max_login_attempts') AS max_attempts,
+         (SELECT setting_value FROM system_settings WHERE setting_key = 'lockout_duration_minutes') AS lockout_minutes`
+    )
+    const maxAttempts = Number(settings?.max_attempts) || 5
+    const lockoutMin  = Number(settings?.lockout_minutes) || 15
+
+    const [[{ cnt }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt FROM login_attempts
+       WHERE email = ? AND success = FALSE
+         AND attempted_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)`,
+      [email, lockoutMin]
+    )
+    return cnt >= maxAttempts
+  } catch {
+    return false // fail open if settings table missing
+  }
+}
 
 // ─── REGISTER ──────────────────────────────────────────────
 
@@ -77,6 +111,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       [cleanName, cleanUsername, cleanEmail, hashed, role]
     )
 
+    await audit(
+      { ip: req.ip, socket: req.socket, user: { id: result.insertId } } as any,
+      'USER_REGISTERED',
+      'user',
+      result.insertId,
+      `Registered as ${role}: ${cleanEmail}`
+    )
+
     res.status(201).json({
       success: true,
       message: 'Registration successful! You can now log in.',
@@ -100,6 +142,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const clean = sanitize(identifier)
+    const ip = req.ip || req.socket.remoteAddress || 'unknown'
+
+    // ── Check lockout before even validating credentials
+    if (await isLockedOut(clean)) {
+      res.status(429).json({
+        success: false,
+        message: 'Account temporarily locked due to too many failed attempts. Please try again later.',
+      })
+      return
+    }
 
     const [rows] = await pool.execute<RowDataPacket[]>(
       'SELECT * FROM users WHERE username = ? OR email = ?',
@@ -107,15 +159,46 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     )
 
     if (rows.length === 0) {
+      await logLoginAttempt(clean, ip, false)
       res.status(401).json({ success: false, message: 'Invalid credentials.' })
       return
     }
 
     const user = rows[0]
+
+    // ── Also check lockout by exact email (in case identifier was username)
+    if (await isLockedOut(user.email)) {
+      res.status(429).json({
+        success: false,
+        message: 'Account temporarily locked due to too many failed attempts. Please try again later.',
+      })
+      return
+    }
+
     const match = await bcrypt.compare(password, user.password)
 
     if (!match) {
+      await logLoginAttempt(user.email, ip, false)
       res.status(401).json({ success: false, message: 'Invalid credentials.' })
+      return
+    }
+
+    // ── Check account status
+    if (user.status === 'suspended') {
+      await logLoginAttempt(user.email, ip, false)
+      res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact the system administrator.',
+      })
+      return
+    }
+
+    if (user.status === 'inactive') {
+      await logLoginAttempt(user.email, ip, false)
+      res.status(403).json({
+        success: false,
+        message: 'Your account is currently inactive. Please contact your attorney or administrator.',
+      })
       return
     }
 
@@ -136,6 +219,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    // ── Log successful attempt and update last_login
+    await logLoginAttempt(user.email, ip, true)
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
+
     // ── sign JWT
     const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
     const token = jwt.sign(
@@ -143,6 +230,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       process.env.JWT_SECRET as string,
       { expiresIn }
     )
+
+    await audit(req, 'USER_LOGIN', 'user', user.id)
 
     res.json({
       success: true,
@@ -154,6 +243,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         username: user.username,
         email: user.email,
         role: user.role,
+        status: user.status,
       },
     })
   } catch (err) {
@@ -199,6 +289,14 @@ export const verifyIBP = async (req: Request, res: Response): Promise<void> => {
     await pool.execute(
       'UPDATE users SET ibp_verified = 1 WHERE id = ? AND role = ?',
       [Number(userId), 'attorney']
+    )
+
+    await audit(
+      { ip: req.ip, socket: req.socket, user: { id: Number(userId) } } as any,
+      'IBP_VERIFIED',
+      'user',
+      Number(userId),
+      'IBP card verified via OCR'
     )
 
     res.json({ success: true, message: 'IBP card verified! You may now log in.' })
@@ -271,6 +369,14 @@ export const verifyClientID = async (req: Request, res: Response): Promise<void>
       [Number(userId), 'client']
     )
 
+    await audit(
+      { ip: req.ip, socket: req.socket, user: { id: Number(userId) } } as any,
+      'CLIENT_ID_VERIFIED',
+      'user',
+      Number(userId),
+      'Government ID verified via OCR'
+    )
+
     res.json({ success: true, message: 'ID verified! You may now log in.' })
   } catch (err) {
     console.error('[verifyClientID]', err)
@@ -283,7 +389,7 @@ export const verifyClientID = async (req: Request, res: Response): Promise<void>
 export const getMe = async (req: Request, res: Response): Promise<void> => {
   try {
     const [rows] = await pool.execute<RowDataPacket[]>(
-      'SELECT id, fullname, username, email, role, created_at FROM users WHERE id = ?',
+      'SELECT id, fullname, username, email, role, status, created_at FROM users WHERE id = ?',
       [req.user!.id]
     )
 
@@ -292,7 +398,24 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       return
     }
 
-    res.json({ success: true, user: rows[0] })
+    const user = rows[0]
+
+    // For secretaries, include the linked attorney info
+    if (user.role === 'secretary') {
+      const [link] = await pool.query<RowDataPacket[]>(
+        `SELECT as2.attorney_id, u.fullname AS attorney_name
+         FROM attorney_secretaries as2
+         JOIN users u ON u.id = as2.attorney_id
+         WHERE as2.secretary_id = ? AND as2.status = 'active'`,
+        [user.id]
+      )
+      if (link.length > 0) {
+        user.attorney_id = link[0].attorney_id
+        user.attorney_name = link[0].attorney_name
+      }
+    }
+
+    res.json({ success: true, user })
   } catch (err) {
     console.error('[getMe]', err)
     res.status(500).json({ success: false, message: 'Server error.' })

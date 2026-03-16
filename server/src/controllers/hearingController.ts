@@ -2,34 +2,23 @@ import { Request, Response } from 'express'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import pool from '../config/db'
 import { notify } from '../utils/notify'
+import { getEffectiveAttorneyId, getCaseScope } from '../utils/scope'
+import { audit } from '../utils/audit'
 
 // ─── List Hearings ───────────────────────────────────────────
 export const getHearings = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
+    const scope = getCaseScope(user)
 
-    let query: string
-    let params: any[]
-
-    if (user.role === 'attorney') {
-      query = `
-        SELECT h.*, c.case_number, c.title AS case_title, c.client_id
-        FROM hearings h
-        JOIN cases c ON h.case_id = c.id
-        WHERE c.attorney_id = ? AND c.deleted_at IS NULL
-        ORDER BY h.scheduled_at ASC`
-      params = [user.id]
-    } else {
-      query = `
-        SELECT h.*, c.case_number, c.title AS case_title
-        FROM hearings h
-        JOIN cases c ON h.case_id = c.id
-        WHERE c.client_id = ? AND c.deleted_at IS NULL
-        ORDER BY h.scheduled_at ASC`
-      params = [user.id]
-    }
-
-    const [rows] = await pool.query<RowDataPacket[]>(query, params)
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT h.*, c.case_number, c.title AS case_title, c.client_id
+       FROM hearings h
+       JOIN cases c ON h.case_id = c.id
+       WHERE ${scope.clause} AND c.deleted_at IS NULL
+       ORDER BY h.scheduled_at ASC`,
+      scope.params
+    )
     res.json({ success: true, data: rows })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
@@ -40,6 +29,7 @@ export const getHearings = async (req: Request, res: Response): Promise<void> =>
 export const createHearing = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
+    const effectiveAttorneyId = getEffectiveAttorneyId(user)
     const { case_id, title, hearing_type, scheduled_at, location, notes } = req.body
 
     if (!case_id || !title || !scheduled_at) {
@@ -47,10 +37,10 @@ export const createHearing = async (req: Request, res: Response): Promise<void> 
       return
     }
 
-    // Verify attorney owns this case
+    // Verify attorney (or secretary's attorney) owns this case
     const [[caseRow]] = await pool.query<RowDataPacket[]>(
       'SELECT id, client_id, case_number FROM cases WHERE id = ? AND attorney_id = ? AND deleted_at IS NULL',
-      [case_id, user.id]
+      [case_id, effectiveAttorneyId]
     )
     if (!caseRow) {
       res.status(403).json({ success: false, message: 'Case not found or access denied.' })
@@ -71,6 +61,8 @@ export const createHearing = async (req: Request, res: Response): Promise<void> 
       result.insertId
     )
 
+    await audit(req, 'HEARING_CREATED', 'hearing', result.insertId, `Case: ${caseRow.case_number}`)
+
     res.status(201).json({ success: true, data: { id: result.insertId } })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })
@@ -81,15 +73,16 @@ export const createHearing = async (req: Request, res: Response): Promise<void> 
 export const updateHearing = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
+    const effectiveAttorneyId = getEffectiveAttorneyId(user)
     const { id } = req.params
     const { title, hearing_type, scheduled_at, location, notes, status } = req.body
 
-    // Verify attorney owns the hearing's case
+    // Verify attorney (or secretary's attorney) owns the hearing's case
     const [[hearing]] = await pool.query<RowDataPacket[]>(
       `SELECT h.id, c.client_id, c.case_number FROM hearings h
        JOIN cases c ON h.case_id = c.id
        WHERE h.id = ? AND c.attorney_id = ?`,
-      [id, user.id]
+      [id, effectiveAttorneyId]
     )
     if (!hearing) {
       res.status(403).json({ success: false, message: 'Hearing not found or access denied.' })
@@ -113,6 +106,8 @@ export const updateHearing = async (req: Request, res: Response): Promise<void> 
         Number(id)
       )
     }
+
+    await audit(req, 'HEARING_UPDATED', 'hearing', Number(id), `Case: ${hearing.case_number}`)
 
     res.json({ success: true })
   } catch (err: any) {
@@ -138,6 +133,7 @@ export const deleteHearing = async (req: Request, res: Response): Promise<void> 
     }
 
     await pool.query("UPDATE hearings SET status='cancelled' WHERE id=?", [id])
+    await audit(req, 'HEARING_CANCELLED', 'hearing', Number(id))
     res.json({ success: true })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })

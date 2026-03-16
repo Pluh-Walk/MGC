@@ -13,6 +13,10 @@ import hearingRoutes from './routes/hearingRoutes'
 import announcementRoutes from './routes/announcementRoutes'
 import messageRoutes from './routes/messageRoutes'
 import reviewRoutes from './routes/reviewRoutes'
+import secretaryRoutes from './routes/secretaryRoutes'
+import adminRoutes from './routes/adminRoutes'
+import settingsRoutes from './routes/settingsRoutes'
+import auditRoutes from './routes/auditRoutes'
 
 dotenv.config()
 
@@ -59,6 +63,10 @@ app.use('/api/hearings', hearingRoutes)
 app.use('/api/announcements', announcementRoutes)
 app.use('/api/messages', messageRoutes)
 app.use('/api/reviews', reviewRoutes)
+app.use('/api/secretaries', secretaryRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/admin/settings', settingsRoutes)
+app.use('/api/admin/audit', auditRoutes)
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {

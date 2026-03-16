@@ -3,6 +3,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import pool from '../config/db'
 import path from 'path'
 import fs   from 'fs'
+import { getEffectiveAttorneyId } from '../utils/scope'
 
 // â”€â”€â”€ Get Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
@@ -85,9 +86,12 @@ export const getThread = async (req: Request, res: Response): Promise<void> => {
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT m.id, m.sender_id, m.receiver_id, m.content, m.is_read, m.created_at,
               m.attachment_path, m.attachment_name, m.attachment_mime, m.edited_at,
-              u.fullname AS sender_name
+              m.sent_on_behalf_of,
+              u.fullname AS sender_name,
+              a.fullname AS attorney_name
        FROM messages m
        JOIN users u ON m.sender_id = u.id
+       LEFT JOIN users a ON m.sent_on_behalf_of = a.id
        WHERE ((m.sender_id = ? AND m.receiver_id = ?)
           OR  (m.sender_id = ? AND m.receiver_id = ?))
          AND m.deleted_for_all = 0
@@ -135,21 +139,24 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const attachmentMime = file ? file.mimetype     : null
     const textContent    = content?.trim() || null
 
+    // Secretary sends on behalf of their attorney
+    const sentOnBehalfOf = user.role === 'secretary' ? getEffectiveAttorneyId(user) : null
+
     // Build query dynamically so we never insert NULL into the NOT NULL content column
     // when the message is attachment-only.
     let sql: string
     let params: any[]
 
     if (textContent) {
-      sql    = `INSERT INTO messages (sender_id, receiver_id, content, case_id, attachment_path, attachment_name, attachment_mime)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`
-      params = [user.id, receiver_id, textContent, case_id ?? null, attachmentPath, attachmentName, attachmentMime]
+      sql    = `INSERT INTO messages (sender_id, receiver_id, content, case_id, attachment_path, attachment_name, attachment_mime, sent_on_behalf_of)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      params = [user.id, receiver_id, textContent, case_id ?? null, attachmentPath, attachmentName, attachmentMime, sentOnBehalfOf]
     } else {
       // Attachment-only: omit content column so the DB uses its default/NULL without violating NOT NULL
       // We also need to ALTER the column to allow NULL — see migration 003b.
-      sql    = `INSERT INTO messages (sender_id, receiver_id, case_id, attachment_path, attachment_name, attachment_mime)
-                VALUES (?, ?, ?, ?, ?, ?)`
-      params = [user.id, receiver_id, case_id ?? null, attachmentPath, attachmentName, attachmentMime]
+      sql    = `INSERT INTO messages (sender_id, receiver_id, case_id, attachment_path, attachment_name, attachment_mime, sent_on_behalf_of)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`
+      params = [user.id, receiver_id, case_id ?? null, attachmentPath, attachmentName, attachmentMime, sentOnBehalfOf]
     }
 
     const [result] = await pool.query<ResultSetHeader>(sql, params)
@@ -300,6 +307,22 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
 export const getContacts = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
+
+    if (user.role === 'secretary') {
+      // Secretary can only message the attorney's clients (those with active cases)
+      const attorneyId = getEffectiveAttorneyId(user)
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT DISTINCT u.id, u.fullname, u.username, u.role
+         FROM users u
+         JOIN cases c ON c.client_id = u.id
+         WHERE c.attorney_id = ? AND c.deleted_at IS NULL AND u.status = 'active'
+         ORDER BY u.fullname ASC`,
+        [attorneyId]
+      )
+      res.json({ success: true, data: rows })
+      return
+    }
+
     const targetRole = user.role === 'attorney' ? 'client' : 'attorney'
 
     const [rows] = await pool.query<RowDataPacket[]>(

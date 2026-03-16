@@ -1,5 +1,7 @@
 import api from './api'
 
+export type UserRole = 'attorney' | 'client' | 'admin' | 'secretary'
+
 export interface RegisterData {
   fullname: string
   username: string
@@ -7,6 +9,15 @@ export interface RegisterData {
   password: string
   confirmPassword: string
   role: 'attorney' | 'client'
+}
+
+export interface SecretaryRegisterData {
+  token: string
+  fullname: string
+  username: string
+  password: string
+  confirmPassword: string
+  phone?: string
 }
 
 export interface LoginData {
@@ -19,7 +30,10 @@ export interface User {
   fullname: string
   username: string
   email: string
-  role: 'attorney' | 'client'
+  role: UserRole
+  status?: string
+  attorney_id?: number
+  attorney_name?: string
 }
 
 export const authService = {
@@ -62,4 +76,11 @@ export const authService = {
   },
 
   isAuthenticated: () => !!localStorage.getItem('token'),
+
+  // Secretary invitation-based registration
+  validateInvitation: (token: string) =>
+    api.get('/secretaries/invite/validate', { params: { token } }),
+
+  registerSecretary: (data: SecretaryRegisterData) =>
+    api.post('/secretaries/register', data),
 }

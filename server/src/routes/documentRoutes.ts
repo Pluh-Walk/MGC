@@ -5,25 +5,26 @@ import {
   downloadDocument,
   deleteDocument,
 } from '../controllers/documentController'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 import upload from '../config/upload'
 
 const router = Router()
 
-// Upload — attorney only
+// Upload — attorney or secretary
 router.post(
   '/cases/:caseId/documents',
   authMiddleware,
-  requireRole('attorney'),
+  requireRole('attorney', 'secretary'),
+  requireAttorneyScope,
   upload.single('file'),
   uploadDocument
 )
 
-// List documents for a case — both roles
-router.get('/cases/:caseId/documents', authMiddleware, getCaseDocuments)
+// List documents for a case — all roles
+router.get('/cases/:caseId/documents', authMiddleware, requireAttorneyScope, getCaseDocuments)
 
-// Download a document — both roles (controller enforces visibility)
-router.get('/documents/:id/download', authMiddleware, downloadDocument)
+// Download a document — all roles (controller enforces visibility)
+router.get('/documents/:id/download', authMiddleware, requireAttorneyScope, downloadDocument)
 
 // Soft delete — attorney only
 router.delete('/documents/:id', authMiddleware, requireRole('attorney'), deleteDocument)

@@ -111,7 +111,7 @@ export default function CaseDetail() {
         </div>
         <div className="dash-nav-right">
           <span className={`role-badge ${user?.role}`}>
-            {user?.role === 'attorney' ? 'Attorney' : 'Client'}
+            {user?.role === 'attorney' ? 'Attorney' : user?.role === 'secretary' ? 'Secretary' : 'Client'}
           </span>
           <SettingsDropdown />
         </div>
@@ -219,7 +219,7 @@ export default function CaseDetail() {
         {/* Tab: Notes */}
         {activeTab === 'notes' && (
           <div className="tab-content">
-            {user?.role === 'attorney' && (
+            {(user?.role === 'attorney' || user?.role === 'secretary') && (
               <div className="note-composer">
                 <textarea
                   value={noteContent}
@@ -229,15 +229,22 @@ export default function CaseDetail() {
                   className="note-textarea"
                 />
                 <div className="note-footer">
-                  <label className="toggle-row">
-                    {notePrivate ? <Lock size={14} /> : <Globe size={14} />}
-                    <input
-                      type="checkbox"
-                      checked={notePrivate}
-                      onChange={(e) => setNotePrivate(e.target.checked)}
-                    />
-                    {notePrivate ? 'Private (attorney only)' : 'Visible to client'}
-                  </label>
+                  {user?.role === 'attorney' ? (
+                    <label className="toggle-row">
+                      {notePrivate ? <Lock size={14} /> : <Globe size={14} />}
+                      <input
+                        type="checkbox"
+                        checked={notePrivate}
+                        onChange={(e) => setNotePrivate(e.target.checked)}
+                      />
+                      {notePrivate ? 'Private (attorney only)' : 'Visible to client'}
+                    </label>
+                  ) : (
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      <Globe size={14} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
+                      Notes are visible to attorney and client
+                    </span>
+                  )}
                   <button
                     className="btn-primary"
                     onClick={handleAddNote}
@@ -272,7 +279,7 @@ export default function CaseDetail() {
         {/* Tab: Documents */}
         {activeTab === 'documents' && (
           <div className="tab-content">
-            {user?.role === 'attorney' && (
+            {(user?.role === 'attorney' || user?.role === 'secretary') && (
               <div className="upload-row">
                 <label className="btn-secondary upload-label">
                   <Upload size={15} />

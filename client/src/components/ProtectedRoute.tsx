@@ -1,9 +1,17 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import type { UserRole } from '../services/authService'
 
 interface Props {
   children: React.ReactNode
-  allowedRoles?: Array<'attorney' | 'client'>
+  allowedRoles?: UserRole[]
+}
+
+const dashboardMap: Record<UserRole, string> = {
+  attorney:  '/dashboard/attorney',
+  client:    '/dashboard/client',
+  admin:     '/dashboard/admin',
+  secretary: '/dashboard/secretary',
 }
 
 export default function ProtectedRoute({ children, allowedRoles }: Props) {
@@ -20,7 +28,7 @@ export default function ProtectedRoute({ children, allowedRoles }: Props) {
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to={user.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'} replace />
+    return <Navigate to={dashboardMap[user.role] || '/login'} replace />
   }
 
   return <>{children}</>

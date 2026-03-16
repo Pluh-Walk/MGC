@@ -5,6 +5,7 @@ import path from 'path'
 import fs from 'fs'
 import { notify } from '../utils/notify'
 import { audit } from '../utils/audit'
+import { getEffectiveAttorneyId } from '../utils/scope'
 
 // ─── Upload Document ────────────────────────────────────────
 export const uploadDocument = async (req: Request, res: Response): Promise<void> => {
@@ -18,10 +19,11 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
       return
     }
 
-    // Verify attorney owns this case
+    // Verify attorney (or secretary's attorney) owns this case
+    const effectiveAttorneyId = getEffectiveAttorneyId(user)
     const [caseRows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM cases WHERE id = ? AND attorney_id = ? AND deleted_at IS NULL`,
-      [caseId, user.id]
+      [caseId, effectiveAttorneyId]
     )
 
     if (!caseRows.length) {
@@ -120,6 +122,10 @@ export const downloadDocument = async (req: Request, res: Response): Promise<voi
 
     // Access control
     if (user.role === 'attorney' && doc.attorney_id !== user.id) {
+      res.status(403).json({ success: false, message: 'Access denied.' })
+      return
+    }
+    if (user.role === 'secretary' && doc.attorney_id !== user.attorneyId) {
       res.status(403).json({ success: false, message: 'Access denied.' })
       return
     }

@@ -1,11 +1,16 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
+import { RowDataPacket } from 'mysql2'
+import pool from '../config/db'
+
+export type UserRole = 'attorney' | 'client' | 'admin' | 'secretary'
 
 export interface JwtPayload {
   id: number
   fullname: string
   username: string
-  role: 'attorney' | 'client'
+  role: UserRole
+  attorneyId?: number  // Present only for secretary role
 }
 
 // Extend Express Request to carry decoded user
@@ -18,14 +23,14 @@ declare global {
 }
 
 // Alias used by newer routes
-export const authMiddleware = (req: Request, res: Response, next: NextFunction): void =>
+export const authMiddleware = (req: Request, res: Response, next: NextFunction) =>
   verifyToken(req, res, next)
 
-export const verifyToken = (
+export const verifyToken = async (
   req: Request,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -37,19 +42,42 @@ export const verifyToken = (
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload
+
+    // Verify user is still active in the database
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT status FROM users WHERE id = ?',
+      [decoded.id]
+    )
+    if (rows.length === 0) {
+      res.status(401).json({ success: false, message: 'User no longer exists.' })
+      return
+    }
+    if (rows[0].status === 'suspended') {
+      res.status(403).json({ success: false, message: 'Your account has been suspended.' })
+      return
+    }
+    if (rows[0].status === 'inactive') {
+      res.status(403).json({ success: false, message: 'Your account is inactive.' })
+      return
+    }
+
     req.user = decoded
     next()
-  } catch {
-    res.status(401).json({ success: false, message: 'Invalid or expired token.' })
+  } catch (err: any) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      res.status(401).json({ success: false, message: 'Invalid or expired token.' })
+    } else {
+      res.status(500).json({ success: false, message: 'Authentication error.' })
+    }
   }
 }
 
 // SSE-safe version: also accepts ?token= query param (EventSource can't set headers)
-export const sseVerifyToken = (
+export const sseVerifyToken = async (
   req: Request,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization
   let token: string | undefined
 
@@ -66,14 +94,29 @@ export const sseVerifyToken = (
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload
+
+    // Verify user is still active
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT status FROM users WHERE id = ?',
+      [decoded.id]
+    )
+    if (rows.length === 0 || rows[0].status === 'suspended' || rows[0].status === 'inactive') {
+      res.status(403).json({ success: false, message: 'Account is suspended or inactive.' })
+      return
+    }
+
     req.user = decoded
     next()
-  } catch {
-    res.status(401).json({ success: false, message: 'Invalid or expired token.' })
+  } catch (err: any) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      res.status(401).json({ success: false, message: 'Invalid or expired token.' })
+    } else {
+      res.status(500).json({ success: false, message: 'Authentication error.' })
+    }
   }
 }
 
-export const requireRole = (...roles: Array<'attorney' | 'client'>) => {
+export const requireRole = (...roles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user || !roles.includes(req.user.role)) {
       res.status(403).json({ success: false, message: 'Forbidden. Insufficient role.' })
@@ -81,4 +124,47 @@ export const requireRole = (...roles: Array<'attorney' | 'client'>) => {
     }
     next()
   }
+}
+
+/**
+ * For secretary users, resolves and injects the linked attorney's ID.
+ * Admin and attorney pass through. Client passes through (handled by query logic).
+ * Must be placed AFTER verifyToken and requireRole.
+ */
+export const requireAttorneyScope = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ success: false, message: 'Not authenticated.' })
+    return
+  }
+
+  if (req.user.role === 'admin' || req.user.role === 'attorney' || req.user.role === 'client') {
+    return next()
+  }
+
+  if (req.user.role === 'secretary') {
+    try {
+      const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT als.attorney_id
+         FROM attorney_secretaries als
+         JOIN users u ON u.id = als.attorney_id
+         WHERE als.secretary_id = ? AND als.status = 'active' AND u.status = 'active'`,
+        [req.user.id]
+      )
+      if (rows.length === 0) {
+        res.status(403).json({ success: false, message: 'Secretary account is not linked to an active attorney.' })
+        return
+      }
+      req.user.attorneyId = rows[0].attorney_id
+      return next()
+    } catch {
+      res.status(500).json({ success: false, message: 'Server error resolving secretary scope.' })
+      return
+    }
+  }
+
+  res.status(403).json({ success: false, message: 'Unknown role.' })
 }

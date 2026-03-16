@@ -21,7 +21,7 @@ import {
   getAttorneyPublicStats,
   listAttorneys,
 } from '../controllers/profileController'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
 const router = Router()
 
@@ -76,6 +76,7 @@ const clientDocUpload = multer({
 router.get('/photo/:userId', serveProfilePhoto)
 
 router.use(authMiddleware)
+router.use(requireAttorneyScope)
 
 // Self profile
 router.get('/me', getMyProfile)
@@ -83,9 +84,9 @@ router.put('/me', updateMyProfile)
 router.put('/password', changePassword)
 router.post('/photo', photoUpload.single('photo'), uploadProfilePhoto)
 
-// Attorney stats & activity
-router.get('/attorney/stats',    requireRole('attorney'), getAttorneyStats)
-router.get('/attorney/activity', requireRole('attorney'), getAttorneyActivity)
+// Attorney stats & activity (secretary can also view)
+router.get('/attorney/stats',    requireRole('attorney', 'secretary'), getAttorneyStats)
+router.get('/attorney/activity', requireRole('attorney', 'secretary'), getAttorneyActivity)
 
 // Client stats, activity, documents
 router.get('/client/stats',     requireRole('client'), getClientStats)
@@ -100,9 +101,9 @@ router.get('/attorneys/:id/stats', requireRole('client'), getAttorneyPublicStats
 // Client: view assigned attorney's public profile
 router.get('/attorneys/:id', requireRole('client'), getAttorneyPublicProfile)
 
-// Attorney-only: view/edit a client's profile
-router.get('/clients/:id',        requireRole('attorney'), getClientProfile)
-router.get('/clients/:id/cases',  requireRole('attorney'), getClientCases)
+// Attorney/Secretary: view/edit a client's profile
+router.get('/clients/:id',        requireRole('attorney', 'secretary'), getClientProfile)
+router.get('/clients/:id/cases',  requireRole('attorney', 'secretary'), getClientCases)
 router.put('/clients/:id',        requireRole('attorney'), updateClientNotes)
 
 export default router

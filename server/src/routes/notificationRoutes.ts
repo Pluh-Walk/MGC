@@ -5,12 +5,13 @@ import {
   markOneRead,
   notificationStream,
 } from '../controllers/notificationController'
-import { authMiddleware, sseVerifyToken } from '../middleware/auth'
+import { authMiddleware, sseVerifyToken, requireAttorneyScope } from '../middleware/auth'
 
 const router = Router()
 
 router.get('/stream', sseVerifyToken, notificationStream) // SSE — uses query-param token
 router.use(authMiddleware)
+router.use(requireAttorneyScope)
 
 router.get('/', getNotifications)
 router.put('/read-all', markAllRead)

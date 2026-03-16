@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import pool from '../config/db'
 import { sendMail } from '../config/mailer'
+import { audit } from '../utils/audit'
 
 // ─── Request Password Reset ─────────────────────────────────
 export const requestReset = async (req: Request, res: Response): Promise<void> => {
@@ -108,6 +109,14 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     await pool.query(
       `UPDATE password_reset_tokens SET used = TRUE WHERE id = ?`,
       [resetEntry.id]
+    )
+
+    await audit(
+      { ip: req.ip, socket: req.socket, user: { id: resetEntry.user_id } } as any,
+      'PASSWORD_RESET_VIA_TOKEN',
+      'user',
+      resetEntry.user_id,
+      'Password reset via email token'
     )
 
     res.json({ success: true, message: 'Password reset successfully. You can now log in.' })

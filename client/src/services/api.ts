@@ -12,7 +12,7 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 globally (token expired / invalid)
+// Handle 401/403 globally
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -20,6 +20,15 @@ api.interceptors.response.use(
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       window.location.href = '/login'
+    }
+    if (err.response?.status === 403) {
+      // Account suspended or inactive — clear session and redirect
+      const msg = err.response?.data?.message || ''
+      if (msg.includes('suspended') || msg.includes('inactive')) {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(err)
   }
@@ -159,6 +168,61 @@ export const passwordResetApi = {
   request: (email: string) => api.post('/password-reset/request', { email }),
   reset: (token: string, password: string, confirmPassword: string) =>
     api.post('/password-reset/reset', { token, password, confirmPassword }),
+}
+
+// ─── Secretary Management (Attorney-side) ─────────────────
+export const secretaryApi = {
+  invite:  (email: string) => api.post('/secretaries/invite', { email }),
+  list:    () => api.get('/secretaries'),
+  remove:  (id: number) => api.put(`/secretaries/${id}/remove`),
+  revokeInvite: (id: number) => api.delete(`/secretaries/invite/${id}`),
+}
+
+// ─── Admin: Dashboard & Users ─────────────────────────────
+export const adminApi = {
+  dashboard: () => api.get('/admin/dashboard'),
+
+  // Users
+  listUsers:       (params?: object) => api.get('/admin/users', { params }),
+  getUser:         (id: number) => api.get(`/admin/users/${id}`),
+  createUser:      (data: object) => api.post('/admin/users', data),
+  updateUser:      (id: number, data: object) => api.put(`/admin/users/${id}`, data),
+  suspendUser:     (id: number, reason: string) => api.put(`/admin/users/${id}/suspend`, { reason }),
+  reactivateUser:  (id: number) => api.put(`/admin/users/${id}/reactivate`),
+  resetPassword:   (id: number, newPassword: string) => api.put(`/admin/users/${id}/reset-password`, { newPassword }),
+  deleteUser:      (id: number) => api.delete(`/admin/users/${id}`),
+  suspensionHistory: (id: number) => api.get(`/admin/users/${id}/suspensions`),
+  loginAttempts:   (id: number) => api.get(`/admin/users/${id}/login-attempts`),
+
+  // Verification
+  verificationQueue: (type?: string) => api.get('/admin/verifications', { params: type ? { type } : {} }),
+  handleVerification: (id: number, action: 'approve' | 'reject', reason?: string) =>
+    api.put(`/admin/verifications/${id}`, { action, reason }),
+
+  // Cases
+  listCases:       (params?: object) => api.get('/admin/cases', { params }),
+  reassignCase:    (id: number, attorney_id: number) => api.put(`/admin/cases/${id}/reassign`, { attorney_id }),
+  archiveCase:     (id: number) => api.put(`/admin/cases/${id}/archive`),
+
+  // Reports
+  userReport:      () => api.get('/admin/reports/users'),
+  caseReport:      () => api.get('/admin/reports/cases'),
+}
+
+// ─── Admin: Settings ──────────────────────────────────────
+export const settingsApi = {
+  getAll:  () => api.get('/admin/settings'),
+  get:     (key: string) => api.get(`/admin/settings/${key}`),
+  update:  (key: string, value: string) => api.put(`/admin/settings/${key}`, { value }),
+  bulkUpdate: (settings: Array<{ key: string; value: string }>) =>
+    api.put('/admin/settings', { settings }),
+}
+
+// ─── Admin: Audit Logs ────────────────────────────────────
+export const auditApi = {
+  list:    (params?: object) => api.get('/admin/audit', { params }),
+  export:  (params?: object) => api.get('/admin/audit/export', { params, responseType: 'blob' }),
+  stats:   () => api.get('/admin/audit/stats'),
 }
 
 export default api

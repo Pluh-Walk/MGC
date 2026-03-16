@@ -19,13 +19,6 @@ export default function SettingsDropdown() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const initials = user?.fullname
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() ?? '?'
-
   return (
     <div className="settings-wrapper" ref={ref}>
       <button

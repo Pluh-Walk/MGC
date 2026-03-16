@@ -269,6 +269,9 @@ export default function AttorneyDashboard() {
             <button className="sidebar-btn" onClick={() => navigate('/clients')}>
               <Users size={17} /> Clients
             </button>
+            <button className="sidebar-btn" onClick={() => navigate('/secretary-management')}>
+              <Users size={17} /> Secretaries
+            </button>
             <button className="sidebar-btn" onClick={() => navigate('/announcements')}>
               <Megaphone size={17} /> Announcements
             </button>

@@ -107,7 +107,11 @@ export default function Cases() {
     }
   }
 
-  const dashPath = user?.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'
+  const dashPath = user?.role === 'attorney' ? '/dashboard/attorney'
+    : user?.role === 'secretary' ? '/dashboard/secretary'
+    : '/dashboard/client'
+
+  const canCreate = user?.role === 'attorney'
 
   return (
     <div className="dashboard">
@@ -119,7 +123,7 @@ export default function Cases() {
         </div>
         <div className="dash-nav-right">
           <span className={`role-badge ${user?.role}`}>
-            {user?.role === 'attorney' ? 'Attorney' : 'Client'}
+            {user?.role === 'attorney' ? 'Attorney' : user?.role === 'secretary' ? 'Secretary' : 'Client'}
           </span>
           <SettingsDropdown />
         </div>
@@ -139,7 +143,7 @@ export default function Cases() {
               {total} total case{total !== 1 ? 's' : ''}
             </p>
           </div>
-          {user?.role === 'attorney' && (
+          {canCreate && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={16} />
               New Case

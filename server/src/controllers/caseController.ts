@@ -4,6 +4,7 @@ import pool from '../config/db'
 import { generateCaseNumber } from '../utils/caseNumber'
 import { notify } from '../utils/notify'
 import { audit } from '../utils/audit'
+import { getCaseScope, getEffectiveAttorneyId } from '../utils/scope'
 
 // ─── Create Case ────────────────────────────────────────────
 export const createCase = async (req: Request, res: Response): Promise<void> => {
@@ -44,23 +45,16 @@ export const createCase = async (req: Request, res: Response): Promise<void> => 
   }
 }
 
-// ─── Get All Cases (attorney sees theirs; client sees their own) ──
+// ─── Get All Cases (scoped by role) ──────────────────────────────
 export const getCases = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
     const { status, search, page = 1, limit = 20 } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
-    let baseWhere = 'c.deleted_at IS NULL'
-    const params: any[] = []
-
-    if (user.role === 'attorney') {
-      baseWhere += ' AND c.attorney_id = ?'
-      params.push(user.id)
-    } else {
-      baseWhere += ' AND c.client_id = ?'
-      params.push(user.id)
-    }
+    const scope = getCaseScope(user)
+    let baseWhere = `c.deleted_at IS NULL AND ${scope.clause}`
+    const params: any[] = [...scope.params]
 
     if (status) {
       baseWhere += ' AND c.status = ?'
@@ -123,6 +117,10 @@ export const getCaseById = async (req: Request, res: Response): Promise<void> =>
       res.status(403).json({ success: false, message: 'Access denied.' })
       return
     }
+    if (user.role === 'secretary' && c.attorney_id !== user.attorneyId) {
+      res.status(403).json({ success: false, message: 'Access denied.' })
+      return
+    }
     if (user.role === 'client' && c.client_id !== user.id) {
       res.status(403).json({ success: false, message: 'Access denied.' })
       return
@@ -138,7 +136,7 @@ export const getCaseById = async (req: Request, res: Response): Promise<void> =>
       [id]
     )
 
-    // Fetch notes (attorney sees all; client sees public only)
+    // Fetch notes (attorney sees all; secretary sees non-private; client sees public only)
     const noteFilter = user.role === 'attorney' ? '' : ' AND n.is_private = FALSE'
     const [notes] = await pool.query<RowDataPacket[]>(
       `SELECT n.*, u.fullname AS author_name
@@ -172,8 +170,27 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
       return
     }
 
-    if (existing[0].attorney_id !== user.id) {
+    const effectiveAttorneyId = getEffectiveAttorneyId(user)
+    if (effectiveAttorneyId === null || existing[0].attorney_id !== effectiveAttorneyId) {
       res.status(403).json({ success: false, message: 'Access denied.' })
+      return
+    }
+
+    // Secretary can only update limited fields (not status)
+    if (user.role === 'secretary') {
+      await pool.query(
+        `UPDATE cases SET title=?, case_type=?, court_name=?, judge_name=?
+         WHERE id = ?`,
+        [
+          title || existing[0].title,
+          case_type || existing[0].case_type,
+          court_name ?? existing[0].court_name,
+          judge_name ?? existing[0].judge_name,
+          id,
+        ]
+      )
+      await audit(req, 'CASE_UPDATED', 'case', Number(id), 'Updated by secretary')
+      res.json({ success: true, message: 'Case updated.' })
       return
     }
 
@@ -258,9 +275,12 @@ export const addNote = async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    // Secretary can only add non-private notes
+    const notePrivacy = user.role === 'secretary' ? false : is_private
+
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO case_notes (case_id, author_id, content, is_private) VALUES (?, ?, ?, ?)`,
-      [id, user.id, content, is_private]
+      [id, user.id, content, notePrivacy]
     )
 
     await pool.query(

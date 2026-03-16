@@ -61,6 +61,8 @@ interface Message {
   attachment_path: string | null
   attachment_name: string | null
   attachment_mime: string | null
+  sent_on_behalf_of: number | null
+  attorney_name: string | null
 }
 
 interface Contact {
@@ -98,7 +100,9 @@ export default function Messages() {
   const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileRef   = useRef<HTMLInputElement>(null)
 
-  const dashboardPath = user?.role === 'attorney' ? '/dashboard/attorney' : '/dashboard/client'
+  const dashboardPath = user?.role === 'attorney' ? '/dashboard/attorney'
+    : user?.role === 'secretary' ? '/dashboard/secretary'
+    : '/dashboard/client'
 
   // ── Close context menu on outside click ────────────────
   useEffect(() => {
@@ -466,6 +470,11 @@ export default function Messages() {
                             {renderAttachment(m)}
                             {hasText && <p>{m.content}</p>}
                             <div className="bubble-meta">
+                              {m.sent_on_behalf_of && (
+                                <span className="msg-on-behalf" style={{ fontSize: '0.7rem', opacity: 0.7, marginRight: 4 }}>
+                                  on behalf of {m.attorney_name ?? 'attorney'}
+                                </span>
+                              )}
                               {m.edited_at && <span className="msg-edited">edited</span>}
                               <span className="bubble-time">
                                 {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
