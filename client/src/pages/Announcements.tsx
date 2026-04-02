@@ -147,7 +147,7 @@ export default function Announcements() {
                       {new Date(a.created_at).toLocaleDateString()}
                     </span>
                   </div>
-                  {canManage && (
+                  {(user?.role === 'attorney' || user?.role === 'admin') && (
                     <button
                       className="btn-icon danger"
                       onClick={() => handleDelete(a.id)}

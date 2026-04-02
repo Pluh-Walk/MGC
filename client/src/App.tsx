@@ -23,6 +23,7 @@ import Announcements from './pages/Announcements'
 import Messages from './pages/Messages'
 import SecretaryRegister from './pages/SecretaryRegister'
 import SecretaryManagement from './pages/SecretaryManagement'
+import SecretaryView from './pages/SecretaryView'
 import AdminUsers from './pages/AdminUsers'
 import AdminCases from './pages/AdminCases'
 import AdminVerificationQueue from './pages/AdminVerificationQueue'
@@ -76,6 +77,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['attorney']}>
                 <SecretaryManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/secretaries/:id"
+            element={
+              <ProtectedRoute allowedRoles={['attorney']}>
+                <SecretaryView />
               </ProtectedRoute>
             }
           />

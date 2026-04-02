@@ -7,6 +7,8 @@ import {
   deleteCase,
   addNote,
   getClientList,
+  getCaseDrafts,
+  approveCaseDraft,
 } from '../controllers/caseController'
 import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
@@ -15,13 +17,15 @@ const router = Router()
 // All routes require authentication
 router.use(authMiddleware)
 
-// Client list (attorneys only — used when creating a case)
-router.get('/clients', requireRole('attorney'), getClientList)
+// Client list (attorneys + secretary — secretary sees only linked attorney's clients)
+router.get('/clients', requireRole('attorney', 'secretary'), getClientList)
 
 // Cases CRUD
-router.post('/', requireRole('attorney'), createCase)
+router.post('/', requireRole('attorney', 'secretary'), createCase)
+router.get('/drafts', requireRole('attorney', 'secretary'), requireAttorneyScope, getCaseDrafts)
 router.get('/', requireRole('attorney', 'client', 'admin', 'secretary'), requireAttorneyScope, getCases)
 router.get('/:id', requireRole('attorney', 'client', 'admin', 'secretary'), requireAttorneyScope, getCaseById)
+router.put('/:id/approve', requireRole('attorney'), approveCaseDraft)
 router.put('/:id', requireRole('attorney', 'secretary'), requireAttorneyScope, updateCase)
 router.delete('/:id', requireRole('attorney'), deleteCase)
 

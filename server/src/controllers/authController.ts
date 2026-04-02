@@ -223,10 +223,22 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await logLoginAttempt(user.email, ip, true)
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
 
+    // ── Resolve attorney link for secretaries
+    let attorneyId: number | undefined
+    if (user.role === 'secretary') {
+      const [[link]] = await pool.query<RowDataPacket[]>(
+        `SELECT attorney_id FROM attorney_secretaries WHERE secretary_id = ? AND status = 'active' LIMIT 1`,
+        [user.id]
+      )
+      attorneyId = link?.attorney_id ?? undefined
+    }
+
     // ── sign JWT
     const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
+    const payload: Record<string, unknown> = { id: user.id, fullname: user.fullname, username: user.username, role: user.role }
+    if (attorneyId !== undefined) payload.attorneyId = attorneyId
     const token = jwt.sign(
-      { id: user.id, fullname: user.fullname, username: user.username, role: user.role },
+      payload,
       process.env.JWT_SECRET as string,
       { expiresIn }
     )

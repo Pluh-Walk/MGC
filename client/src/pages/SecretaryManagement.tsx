@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Scale, ArrowLeft, UserPlus, Users, Mail, Trash2, AlertCircle, CheckCircle2, X, Clock, XCircle, Phone, Link2, Send } from 'lucide-react'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { secretaryApi } from '../services/api'
+import { secretaryApi, profileApi } from '../services/api'
 
 interface Secretary {
   id: number
@@ -11,7 +11,8 @@ interface Secretary {
   username: string
   email: string
   phone: string | null
-  linked_at: string
+  hired_at: string
+  photo_path: string | null
 }
 
 interface Invitation {
@@ -33,13 +34,14 @@ export default function SecretaryManagement() {
   const [showInvite, setShowInvite] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviting, setInviting] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{ email: string; emailSent: boolean; emailError: string | null } | null>(null)
 
   const fetchData = () => {
     setLoading(true)
     secretaryApi.list()
       .then(res => {
-        setSecretaries(res.data.data.secretaries || [])
-        setInvitations(res.data.data.invitations || [])
+        setSecretaries(res.data.secretaries || [])
+        setInvitations(res.data.invitations || [])
       })
       .catch(err => setError(err.response?.data?.message || 'Failed to load.'))
       .finally(() => setLoading(false))
@@ -59,8 +61,9 @@ export default function SecretaryManagement() {
     e.preventDefault()
     setInviting(true)
     try {
-      await secretaryApi.invite(inviteEmail)
-      setSuccess(`Invitation sent to ${inviteEmail}.`)
+      const res = await secretaryApi.invite(inviteEmail)
+      const { emailSent, emailError } = res.data
+      setInviteResult({ email: inviteEmail, emailSent, emailError })
       setInviteEmail('')
       setShowInvite(false)
       fetchData()
@@ -130,6 +133,17 @@ export default function SecretaryManagement() {
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}><AlertCircle size={16} /> {error} <button onClick={() => setError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={14} /></button></div>}
         {success && <div className="alert alert-success" style={{ marginBottom: '1rem' }}><CheckCircle2 size={16} /> {success} <button onClick={() => setSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={14} /></button></div>}
 
+        {inviteResult && (
+          <div className="alert" style={{ marginBottom: '1rem', background: inviteResult.emailSent ? 'var(--success-bg, #f0fdf4)' : 'var(--warning-bg, #fffbeb)', borderColor: inviteResult.emailSent ? 'var(--success, #16a34a)' : '#d97706', color: inviteResult.emailSent ? 'var(--success, #15803d)' : '#92400e', border: '1px solid', borderRadius: '8px', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'space-between' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+              {inviteResult.emailSent
+                ? <><CheckCircle2 size={16} /> Invitation emailed to {inviteResult.email}</>
+                : <><AlertCircle size={16} /> Email delivery failed — {inviteResult.emailError}</>}
+            </span>
+            <button onClick={() => setInviteResult(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={14} /></button>
+          </div>
+        )}
+
         {loading ? <div className="loading-state"><div className="spinner" /></div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
@@ -149,10 +163,13 @@ export default function SecretaryManagement() {
             ) : (
               <div className="sec-card-grid">
                 {secretaries.map(s => (
-                  <div key={s.id} className="sec-card">
+                  <div key={s.id} className="sec-card" onClick={() => navigate(`/secretaries/${s.id}`)} style={{ cursor: 'pointer' }}>
                     <div className="sec-card-top">
                       <div className="sec-avatar">
-                        {s.fullname.charAt(0).toUpperCase()}
+                        {s.photo_path
+                          ? <img src={profileApi.photoUrl(s.id)} alt={s.fullname} className="sec-avatar-img" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.nextElementSibling as HTMLElement | null)?.removeAttribute('style') }} />
+                          : null}
+                        <span style={s.photo_path ? { display: 'none' } : {}}>{s.fullname.charAt(0).toUpperCase()}</span>
                       </div>
                       <div className="sec-card-info">
                         <h4>{s.fullname}</h4>
@@ -161,7 +178,7 @@ export default function SecretaryManagement() {
                       <button
                         className="action-icon-btn danger"
                         title="Remove secretary"
-                        onClick={() => handleRemove(s)}
+                        onClick={e => { e.stopPropagation(); handleRemove(s) }}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -180,7 +197,7 @@ export default function SecretaryManagement() {
                       )}
                       <div className="sec-detail-row">
                         <Link2 size={13} />
-                        <span>Linked {new Date(s.linked_at).toLocaleDateString()}</span>
+                        <span>Linked {new Date(s.hired_at).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>

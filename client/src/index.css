@@ -670,6 +670,30 @@ body {
   gap: 1.5rem;
 }
 
+/* ── Secretary Stats Row ───────────────────────────────────── */
+.sec-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+.sec-stat-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.sec-stat-card[style*="cursor: pointer"]:hover {
+  border-color: rgba(139,92,246,0.3);
+  transform: translateY(-1px);
+}
+.sec-stat-icon { color: var(--accent); opacity: 0.85; flex-shrink: 0; }
+.sec-stat-value { font-size: 1.35rem; font-weight: 700; line-height: 1; }
+.sec-stat-label { font-size: 0.73rem; color: var(--text-muted); margin-top: 0.2rem; }
+
 /* Center section blocks */
 .center-section {
   display: flex;
@@ -5670,6 +5694,17 @@ body {
   flex-shrink: 0;
   color: #fff;
   background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  overflow: hidden;
+  position: relative;
+}
+.sec-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .sec-card-info {
@@ -6042,3 +6077,103 @@ select.profile-input option { background: var(--surface-solid); }
   white-space: pre-wrap;
 }
 
+
+/* --- Sidebar Attorney Card (SecretaryDashboard) --- */
+.sidebar-attorney-card {
+  margin: 1rem 0.75rem 0;
+  padding: 0.85rem;
+  background: rgba(167,139,250,0.07);
+  border: 1px solid rgba(167,139,250,0.18);
+  border-radius: var(--radius);
+}
+.sidebar-atty-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+.sidebar-atty-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+.sidebar-atty-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.sidebar-atty-role {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.avail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.sidebar-atty-contact {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-top: 0.3rem;
+}
+.sidebar-atty-contact:hover { color: var(--accent); }
+
+/* --- Inline Edit Form (CaseDetail) --- */
+.inline-edit-form {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.inline-edit-form .field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+.inline-edit-form .field-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.inline-edit-form input,
+.inline-edit-form select {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.65rem;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.inline-edit-form input:focus,
+.inline-edit-form select:focus {
+  border-color: var(--accent);
+}
+
+/* --- Upload row toggle --- */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  user-select: none;
+}

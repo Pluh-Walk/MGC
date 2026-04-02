@@ -4,6 +4,7 @@ import {
   Scale, ArrowLeft, Users, Search, Loader2,
   Briefcase, MapPin, Mail, BadgeCheck,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import { casesApi, profileApi } from '../services/api'
@@ -20,6 +21,7 @@ interface Client {
 }
 
 export default function Clients() {
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [clients,  setClients]  = useState<Client[]>([])
   const [filtered, setFiltered] = useState<Client[]>([])
@@ -53,14 +55,14 @@ export default function Clients() {
           MGC Law System
         </div>
         <div className="dash-nav-right">
-          <span className="role-badge attorney">Attorney</span>
+          <span className={`role-badge ${user?.role}`}>{user?.role === 'secretary' ? 'Secretary' : 'Attorney'}</span>
           <NotificationBell />
           <SettingsDropdown />
         </div>
       </nav>
 
       <main className="dash-content">
-        <button className="btn-back" onClick={() => navigate('/dashboard/attorney')}>
+        <button className="btn-back" onClick={() => navigate(user?.role === 'secretary' ? '/dashboard/secretary' : '/dashboard/attorney')}>
           <ArrowLeft size={16} /> Back to Dashboard
         </button>
 

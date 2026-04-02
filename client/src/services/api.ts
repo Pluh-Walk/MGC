@@ -45,6 +45,8 @@ export const casesApi = {
   addNote: (id: number, data: { content: string; is_private: boolean }) =>
     api.post(`/cases/${id}/notes`, data),
   clientList: () => api.get('/cases/clients'),
+  drafts: () => api.get('/cases/drafts'),
+  approveDraft: (id: number) => api.put(`/cases/${id}/approve`, {}),
 }
 
 // ─── Profile ──────────────────────────────────────────────
@@ -174,8 +176,10 @@ export const passwordResetApi = {
 export const secretaryApi = {
   invite:  (email: string) => api.post('/secretaries/invite', { email }),
   list:    () => api.get('/secretaries'),
+  getById: (id: number) => api.get(`/secretaries/${id}`),
   remove:  (id: number) => api.put(`/secretaries/${id}/remove`),
   revokeInvite: (id: number) => api.delete(`/secretaries/invite/${id}`),
+  getAttorneyInfo: () => api.get('/secretaries/attorney-info'),
 }
 
 // ─── Admin: Dashboard & Users ─────────────────────────────

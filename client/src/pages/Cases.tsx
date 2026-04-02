@@ -111,7 +111,7 @@ export default function Cases() {
     : user?.role === 'secretary' ? '/dashboard/secretary'
     : '/dashboard/client'
 
-  const canCreate = user?.role === 'attorney'
+  const canCreate = user?.role === 'attorney' || user?.role === 'secretary'
 
   return (
     <div className="dashboard">
@@ -146,7 +146,7 @@ export default function Cases() {
           {canCreate && (
             <button className="btn-primary" onClick={openCreate}>
               <Plus size={16} />
-              New Case
+              {user?.role === 'secretary' ? 'Submit Draft' : 'New Case'}
             </button>
           )}
         </div>

@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import UserAvatar from '../components/UserAvatar'
-import { hearingsApi, announcementsApi, messagesApi } from '../services/api'
+import { hearingsApi, announcementsApi, messagesApi, casesApi } from '../services/api'
 
 const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
@@ -56,6 +56,9 @@ export default function AttorneyDashboard() {
   const [calView, setCalView] = useState<View>('month')
   const [selectedHearing, setSelectedHearing] = useState<Hearing | null>(null)
 
+  // ── Drafts state ─────────────────────────────────────
+  const [drafts, setDrafts] = useState<any[]>([])
+
   // ── Announcements state ──────────────────────────────
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loadingA, setLoadingA] = useState(true)
@@ -89,6 +92,11 @@ export default function AttorneyDashboard() {
     finally { setLoadingH(false) }
   }, [])
   useEffect(() => { loadHearings() }, [loadHearings])
+
+  // ── Load drafts ──────────────────────────────────────
+  useEffect(() => {
+    casesApi.drafts().then(r => setDrafts(r.data.data ?? [])).catch(() => {})
+  }, [])
 
   // ── Load announcements ───────────────────────────────
   const loadAnnouncements = useCallback(async () => {
@@ -338,6 +346,28 @@ export default function AttorneyDashboard() {
               </div>
             )}
           </div>
+
+          {/* ── Pending Drafts Section ── */}
+          {drafts.length > 0 && (
+            <div className="center-section">
+              <div className="center-section-header">
+                <h3><FileText size={18} className="cal-panel-icon" /> Pending Drafts</h3>
+                <button className="btn-link" onClick={() => navigate('/cases')}>View all <ChevronRight size={14} /></button>
+              </div>
+              <div className="announcements-feed">
+                {drafts.slice(0, 5).map(d => (
+                  <div key={d.id} className="announce-feed-item" style={{ cursor: 'pointer' }} onClick={() => navigate(`/cases/${d.id}`)} role="button" tabIndex={0}>
+                    <div className="announce-feed-top">
+                      <span className="announce-feed-tag"><Briefcase size={11} /> {d.case_number}</span>
+                      <span className="announce-feed-date" style={{ color: '#a78bfa', fontWeight: 600 }}>Draft</span>
+                    </div>
+                    <strong>{d.title}</strong>
+                    <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.7 }}>Submitted by secretary — click to review</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Announcements Section ── */}
           <div className="center-section">

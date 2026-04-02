@@ -68,23 +68,32 @@ export const inviteSecretary = async (req: Request, res: Response): Promise<void
     const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:3000'
     const inviteLink = `${clientOrigin}/secretary/register?token=${token}`
 
+    let emailSent = false
+    let emailError: string | null = null
     try {
       await sendMail(
         cleanEmail,
         'Invitation to Join MGC Law System as Secretary',
         secretaryInviteEmail(attorney.fullname, inviteLink)
       )
-    } catch (emailErr) {
+      emailSent = true
+    } catch (emailErr: any) {
+      emailError = emailErr?.message || 'Unknown error'
       console.error('[inviteSecretary] Email send failed:', emailErr)
-      // Still return success — the invitation is created, link can be shared manually
     }
 
     await audit(req, 'SECRETARY_INVITED', 'user', attorney.id, `Invited: ${cleanEmail}`)
 
+    const message = emailSent
+      ? `Invitation sent to ${cleanEmail}.`
+      : `Invitation created but email delivery failed. Share the link manually.`
+
     res.status(201).json({
       success: true,
-      message: `Invitation sent to ${cleanEmail}.`,
-      inviteLink, // Also return the link so attorney can share it manually if email fails
+      emailSent,
+      emailError,
+      message,
+      inviteLink,
     })
   } catch (err) {
     console.error('[inviteSecretary]', err)
@@ -233,7 +242,7 @@ export const registerSecretary = async (req: Request, res: Response): Promise<vo
     // Issue JWT so secretary can log in immediately
     const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
     const jwtToken = jwt.sign(
-      { id: secretaryId, fullname: cleanName, username: cleanUsername, role: 'secretary' as const },
+      { id: secretaryId, fullname: cleanName, username: cleanUsername, role: 'secretary' as const, attorneyId: invitation.attorney_id },
       process.env.JWT_SECRET as string,
       { expiresIn }
     )
@@ -331,7 +340,61 @@ export const removeSecretary = async (req: Request, res: Response): Promise<void
   }
 }
 
+// ─── Get Linked Attorney Info (secretary-only) ─────────────
+export const getLinkedAttorneyInfo = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const secretaryId = req.user!.id
+    const [[row]] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname, u.email,
+              ap.phone, ap.availability
+       FROM attorney_secretaries als
+       JOIN users u ON u.id = als.attorney_id
+       LEFT JOIN attorney_profiles ap ON ap.user_id = als.attorney_id
+       WHERE als.secretary_id = ? AND als.status = 'active'
+       LIMIT 1`,
+      [secretaryId]
+    )
+    if (!row) {
+      res.status(404).json({ success: false, message: 'No linked attorney found.' })
+      return
+    }
+    res.json({ success: true, data: row })
+  } catch (err) {
+    console.error('[getLinkedAttorneyInfo]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
 // ─── Revoke Invitation ──────────────────────────────────────
+// ─── Get Secretary By ID (attorney-only) ───────────────────
+export const getSecretaryById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const attorneyId = req.user!.id
+    const { id } = req.params
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname, u.username, u.email, u.created_at,
+              als.hired_at, als.status AS link_status,
+              sp.phone, sp.photo_path
+       FROM attorney_secretaries als
+       JOIN users u ON u.id = als.secretary_id
+       LEFT JOIN secretary_profiles sp ON sp.user_id = u.id
+       WHERE als.attorney_id = ? AND als.secretary_id = ? AND als.status = 'active'`,
+      [attorneyId, id]
+    )
+
+    if (!rows[0]) {
+      res.status(404).json({ success: false, message: 'Secretary not found.' })
+      return
+    }
+
+    res.json({ success: true, data: rows[0] })
+  } catch (err) {
+    console.error('[getSecretaryById]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
 export const revokeInvitation = async (req: Request, res: Response): Promise<void> => {
   try {
     const attorneyId = req.user!.id

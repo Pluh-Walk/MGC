@@ -4,6 +4,8 @@ import {
   validateInvitation,
   registerSecretary,
   listSecretaries,
+  getSecretaryById,
+  getLinkedAttorneyInfo,
   removeSecretary,
   revokeInvitation,
 } from '../controllers/secretaryController'
@@ -19,6 +21,8 @@ router.post('/register', registerSecretary)
 router.use(authMiddleware)
 router.post('/invite', requireRole('attorney'), inviteSecretary)
 router.get('/', requireRole('attorney'), listSecretaries)
+router.get('/attorney-info', requireRole('secretary'), getLinkedAttorneyInfo)
+router.get('/:id', requireRole('attorney'), getSecretaryById)
 router.put('/:id/remove', requireRole('attorney'), removeSecretary)
 router.delete('/invite/:id', requireRole('attorney'), revokeInvitation)
 

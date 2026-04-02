@@ -51,8 +51,8 @@ export default function SecretaryRegister() {
 
     authService.validateInvitation(token)
       .then((res) => {
-        setInviteEmail(res.data.data.email)
-        setAttorneyName(res.data.data.attorney_name)
+        setInviteEmail(res.data.invitation.email)
+        setAttorneyName(res.data.invitation.attorney_name)
         setTokenValid(true)
       })
       .catch((err) => {

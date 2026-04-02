@@ -6,6 +6,7 @@ import {
   Clock, Users, Calendar, MessageSquare,
   CreditCard, Heart, ChevronRight,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import { profileApi } from '../services/api'
@@ -63,6 +64,7 @@ function fmtDate(dateStr: string | null) {
 
 export default function ClientView() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   const [profile, setProfile] = useState<ClientProfile | null>(null)
@@ -116,7 +118,7 @@ export default function ClientView() {
           MGC Law System
         </div>
         <div className="dash-nav-right">
-          <span className="role-badge attorney">Attorney</span>
+          <span className={`role-badge ${user?.role}`}>{user?.role === 'secretary' ? 'Secretary' : 'Attorney'}</span>
           <NotificationBell />
           <SettingsDropdown />
         </div>
