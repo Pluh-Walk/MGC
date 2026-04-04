@@ -8,6 +8,7 @@ type NotificationType =
   | 'note_added'
   | 'announcement'
   | 'password_reset'
+  | 'deadline_reminder'
 
 /**
  * Creates a notification record for a user.

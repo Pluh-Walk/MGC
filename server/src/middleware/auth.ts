@@ -32,16 +32,18 @@ export const verifyToken = async (
   next: NextFunction
 ): Promise<void> => {
   const authHeader = req.headers.authorization
+  // Allow token via query param for browser-opened URLs (e.g. print/export tabs)
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : null
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith('Bearer ') && !queryToken) {
     res.status(401).json({ success: false, message: 'Access denied. No token provided.' })
     return
   }
 
-  const token = authHeader.split(' ')[1]
+  const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken!
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload
+    const decoded = jwt.verify(rawToken, process.env.JWT_SECRET as string) as JwtPayload
 
     // Verify user is still active in the database
     const [rows] = await pool.query<RowDataPacket[]>(

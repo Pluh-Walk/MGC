@@ -94,8 +94,8 @@ router.get('/client/activity',  requireRole('client'), getClientActivity)
 router.get('/client/documents', requireRole('client'), getClientDocuments)
 router.post('/client/documents', requireRole('client'), clientDocUpload.single('file'), clientUploadDocument)
 
-// Client: browse all verified attorneys
-router.get('/attorneys', requireRole('client'), listAttorneys)
+// Client: browse all verified attorneys (also accessible by attorney/secretary for co-counsel)
+router.get('/attorneys', requireRole('client', 'attorney', 'secretary'), listAttorneys)
 // Client: view attorney public stats
 router.get('/attorneys/:id/stats', requireRole('client'), getAttorneyPublicStats)
 // Client: view assigned attorney's public profile

@@ -7,13 +7,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   Scale, FileText, Users, Calendar, MessageSquare, Briefcase, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
-  Trash2, Clock, MapPin, ChevronRight,
+  Trash2, Clock, MapPin, ChevronRight, AlertTriangle, CalendarClock,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import UserAvatar from '../components/UserAvatar'
-import { hearingsApi, announcementsApi, messagesApi, casesApi } from '../services/api'
+import { hearingsApi, announcementsApi, messagesApi, casesApi, deadlinesApi } from '../services/api'
 
 const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
@@ -59,6 +59,9 @@ export default function AttorneyDashboard() {
   // ── Drafts state ─────────────────────────────────────
   const [drafts, setDrafts] = useState<any[]>([])
 
+  // ── Deadline summary state ────────────────────────────
+  const [deadlineSummary, setDeadlineSummary] = useState<{ overdue: number; thisWeek: any[] }>({ overdue: 0, thisWeek: [] })
+
   // ── Announcements state ──────────────────────────────
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loadingA, setLoadingA] = useState(true)
@@ -96,6 +99,11 @@ export default function AttorneyDashboard() {
   // ── Load drafts ──────────────────────────────────────
   useEffect(() => {
     casesApi.drafts().then(r => setDrafts(r.data.data ?? [])).catch(() => {})
+  }, [])
+
+  // ── Load deadline summary ────────────────────────────
+  useEffect(() => {
+    deadlinesApi.summary().then(r => setDeadlineSummary({ overdue: r.data.overdue, thisWeek: r.data.thisWeek })).catch(() => {})
   }, [])
 
   // ── Load announcements ───────────────────────────────
@@ -295,6 +303,42 @@ export default function AttorneyDashboard() {
                   <div className="upcoming-info">
                     <strong>{h.title}</strong>
                     <span>{new Date(h.scheduled_at).toLocaleDateString()} · {h.case_number}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Deadline summary widget */}
+          {(deadlineSummary.overdue > 0 || deadlineSummary.thisWeek.length > 0) && (
+            <div className="sidebar-upcoming" style={{ borderTop: '1px solid #f1f5f9' }}>
+              <h4 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <CalendarClock size={14} /> Deadlines
+              </h4>
+              {deadlineSummary.overdue > 0 && (
+                <div
+                  className="upcoming-item"
+                  onClick={() => navigate('/cases?overdue_only=true')}
+                  style={{ cursor: 'pointer', background: '#fef2f2', borderRadius: 8, padding: '0.4rem 0.6rem', marginBottom: '0.35rem' }}
+                >
+                  <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0 }} />
+                  <div className="upcoming-info" style={{ marginLeft: 6 }}>
+                    <strong style={{ color: '#dc2626' }}>{deadlineSummary.overdue} overdue deadline{deadlineSummary.overdue !== 1 ? 's' : ''}</strong>
+                    <span>Tap to view cases</span>
+                  </div>
+                </div>
+              )}
+              {deadlineSummary.thisWeek.map((d: any) => (
+                <div
+                  key={d.id}
+                  className="upcoming-item"
+                  onClick={() => navigate(`/cases/${d.case_id}`)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <div className="upcoming-dot" style={{ background: '#6366f1' }} />
+                  <div className="upcoming-info">
+                    <strong>{d.title}</strong>
+                    <span>{new Date(d.due_date).toLocaleDateString()} · {d.case_number}</span>
                   </div>
                 </div>
               ))}

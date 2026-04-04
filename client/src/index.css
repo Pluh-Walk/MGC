@@ -17,6 +17,7 @@
   --bg:             #0f172a;
   --surface:        rgba(255,255,255,0.05);
   --surface-solid:  #1e293b;
+  --surface-2:      #1a2744;
   --border:         rgba(255,255,255,0.10);
   --text:           #f1f5f9;
   --text-muted:     #94a3b8;
@@ -35,6 +36,17 @@ body {
   background-color: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Global select reset — ensures native option lists use dark background */
+select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+select option {
+  background: #1a2744;
+  color: #f1f5f9;
 }
 
 /* ── Auth Layout ────────────────────────────────────── */
@@ -2001,6 +2013,10 @@ body {
   cursor: pointer;
   outline: none;
 }
+.filter-select option {
+  background: #1a2744;
+  color: #f1f5f9;
+}
 .filter-select:focus { border-color: var(--accent); }
 .select-chevron {
   position: absolute;
@@ -2187,7 +2203,7 @@ body {
 .form-group select,
 .form-group textarea {
   padding: 0.5rem 0.75rem;
-  background: var(--surface);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -2196,6 +2212,10 @@ body {
   transition: border-color var(--transition);
   font-family: inherit;
   resize: vertical;
+}
+.form-group select option {
+  background: #1a2744;
+  color: #f1f5f9;
 }
 .form-group input:focus,
 .form-group select:focus,
@@ -2263,6 +2283,40 @@ body {
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .tab-content { animation: fadeIn 0.2s ease; }
+
+/* ── Field group (shared form helper used in CaseDetail tabs etc.) ── */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.field-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.field-group input,
+.field-group select,
+.field-group textarea {
+  padding: 0.45rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--transition);
+  resize: vertical;
+}
+.field-group select option { background: #1a2744; color: #f1f5f9; }
+.field-group input:focus,
+.field-group select:focus,
+.field-group textarea:focus { border-color: var(--accent); }
+.field-group input::placeholder,
+.field-group textarea::placeholder { color: var(--text-muted); opacity: 0.6; }
 
 /* ── Info grid ───────────────────────────────────────────── */
 .info-grid {
@@ -3338,7 +3392,7 @@ body {
 .modal-card input:focus,
 .modal-card select:focus,
 .modal-card textarea:focus { border-color: var(--accent); }
-.modal-card select option   { background: var(--surface-solid); }
+.modal-card select option   { background: #1a2744; color: #f1f5f9; }
 
 /* ════════════════════════════════════════════════
    ATTORNEY PROFILE PAGE

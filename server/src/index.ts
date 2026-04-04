@@ -17,6 +17,7 @@ import secretaryRoutes from './routes/secretaryRoutes'
 import adminRoutes from './routes/adminRoutes'
 import settingsRoutes from './routes/settingsRoutes'
 import auditRoutes from './routes/auditRoutes'
+import { startDeadlineReminder } from './scripts/deadlineReminder'
 
 dotenv.config()
 
@@ -80,4 +81,5 @@ app.use((_req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`)
+  startDeadlineReminder()
 })

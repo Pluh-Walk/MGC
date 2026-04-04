@@ -12,7 +12,7 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
   try {
     const user = (req as any).user
     const { caseId } = req.params
-    const { category = 'other', is_client_visible = false } = req.body
+    const { category = 'other', is_client_visible = false, privilege_type = 'none' } = req.body
 
     if (!req.file) {
       res.status(400).json({ success: false, message: 'No file uploaded.' })
@@ -33,8 +33,8 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
     }
 
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO documents (case_id, uploaded_by, filename, original_name, file_size, mime_type, category, is_client_visible)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO documents (case_id, uploaded_by, filename, original_name, file_size, mime_type, category, privilege_type, is_client_visible)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         caseId,
         user.id,
@@ -43,6 +43,7 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
         req.file.size,
         req.file.mimetype,
         category,
+        privilege_type,
         is_client_visible === 'true' || is_client_visible === true,
       ]
     )
@@ -79,16 +80,20 @@ export const getCaseDocuments = async (req: Request, res: Response): Promise<voi
     const { caseId } = req.params
 
     let visibilityFilter = ''
+    let privilegeFilter = ''
     if (user.role === 'client') {
       visibilityFilter = ' AND d.is_client_visible = TRUE'
+      // Clients cannot see privileged/work-product documents
+      privilegeFilter = " AND d.privilege_type NOT IN ('attorney_client','work_product')"
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT d.id, d.original_name, d.file_size, d.mime_type, d.category,
-              d.is_client_visible, d.uploaded_at, u.fullname AS uploaded_by_name
+              d.privilege_type, d.is_client_visible, d.uploaded_at,
+              u.fullname
        FROM documents d
        LEFT JOIN users u ON u.id = d.uploaded_by
-       WHERE d.case_id = ? AND d.deleted_at IS NULL${visibilityFilter}
+       WHERE d.case_id = ? AND d.deleted_at IS NULL${visibilityFilter}${privilegeFilter}
        ORDER BY d.uploaded_at DESC`,
       [caseId]
     )

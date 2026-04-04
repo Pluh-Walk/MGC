@@ -36,7 +36,7 @@ api.interceptors.response.use(
 
 // ─── Cases ────────────────────────────────────────────────
 export const casesApi = {
-  list: (params?: { status?: string; search?: string; page?: number }) =>
+  list: (params?: { status?: string; search?: string; page?: number; priority?: string; case_type?: string; overdue_only?: boolean }) =>
     api.get('/cases', { params }),
   get: (id: number) => api.get(`/cases/${id}`),
   create: (data: object) => api.post('/cases', data),
@@ -47,6 +47,75 @@ export const casesApi = {
   clientList: () => api.get('/cases/clients'),
   drafts: () => api.get('/cases/drafts'),
   approveDraft: (id: number) => api.put(`/cases/${id}/approve`, {}),
+  exportUrl: (params?: { status?: string; priority?: string; case_type?: string }) => {
+    const token = localStorage.getItem('token') ?? ''
+    const q = new URLSearchParams({ format: 'csv', token, ...params as any }).toString()
+    return `/api/cases/export?${q}`
+  },
+  exportCase: (id: number) => {
+    window.open(`/api/cases/${id}/export?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`, '_blank')
+  },
+}
+
+// ─── Case Parties ─────────────────────────────────────────
+export const partiesApi = {
+  list:   (caseId: number) => api.get(`/cases/${caseId}/parties`),
+  add:    (caseId: number, data: object) => api.post(`/cases/${caseId}/parties`, data),
+  update: (caseId: number, partyId: number, data: object) =>
+    api.put(`/cases/${caseId}/parties/${partyId}`, data),
+  delete: (caseId: number, partyId: number) =>
+    api.delete(`/cases/${caseId}/parties/${partyId}`),
+}
+
+// ─── Case Deadlines ───────────────────────────────────────
+export const deadlinesApi = {
+  list:     (caseId: number) => api.get(`/cases/${caseId}/deadlines`),
+  create:   (caseId: number, data: object) => api.post(`/cases/${caseId}/deadlines`, data),
+  update:   (caseId: number, deadlineId: number, data: object) =>
+    api.put(`/cases/${caseId}/deadlines/${deadlineId}`, data),
+  complete: (caseId: number, deadlineId: number) =>
+    api.put(`/cases/${caseId}/deadlines/${deadlineId}/complete`, {}),
+  delete:   (caseId: number, deadlineId: number) =>
+    api.delete(`/cases/${caseId}/deadlines/${deadlineId}`),
+  summary:  () => api.get('/cases/deadlines/summary'),
+}
+
+// ─── Case Billing ─────────────────────────────────────────
+export const billingApi = {
+  list:   (caseId: number) => api.get(`/cases/${caseId}/billing`),
+  add:    (caseId: number, data: object) => api.post(`/cases/${caseId}/billing`, data),
+  update: (caseId: number, entryId: number, data: object) =>
+    api.patch(`/cases/${caseId}/billing/${entryId}`, data),
+  delete: (caseId: number, entryId: number) =>
+    api.delete(`/cases/${caseId}/billing/${entryId}`),
+}
+
+// ─── Case Relations ───────────────────────────────────────
+export const relationsApi = {
+  list:   (caseId: number) => api.get(`/cases/${caseId}/relations`),
+  add:    (caseId: number, data: { related_case_id: number; relation_type?: string; notes?: string }) =>
+    api.post(`/cases/${caseId}/relations`, data),
+  delete: (caseId: number, relationId: number) =>
+    api.delete(`/cases/${caseId}/relations/${relationId}`),
+}
+
+// ─── Co-counsel ────────────────────────────────────────────
+export const cocounselApi = {
+  list:   (caseId: number) => api.get(`/cases/${caseId}/cocounsel`),
+  add:    (caseId: number, data: { attorney_id: number; role?: string }) =>
+    api.post(`/cases/${caseId}/cocounsel`, data),
+  remove: (caseId: number, entryId: number) =>
+    api.delete(`/cases/${caseId}/cocounsel/${entryId}`),
+}
+
+// ─── Tags ──────────────────────────────────────────────────
+export const tagsApi = {
+  listAll:    () => api.get('/cases/tags'),
+  create:     (data: { name: string; color?: string }) => api.post('/cases/tags', data),
+  deleteTag:  (tagId: number) => api.delete(`/cases/tags/${tagId}`),
+  getCaseTags:   (caseId: number) => api.get(`/cases/${caseId}/tags`),
+  assign:        (caseId: number, tag_id: number) => api.post(`/cases/${caseId}/tags`, { tag_id }),
+  remove:        (caseId: number, tagId: number) => api.delete(`/cases/${caseId}/tags/${tagId}`),
 }
 
 // ─── Profile ──────────────────────────────────────────────
