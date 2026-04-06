@@ -62,7 +62,11 @@ export const authService = {
     return res
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      // Revoke the refresh token cookie server-side before clearing local state
+      await api.post('/auth/logout')
+    } catch { /* best-effort — clear local state regardless */ }
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     window.location.href = '/login'
@@ -76,6 +80,15 @@ export const authService = {
   },
 
   isAuthenticated: () => !!localStorage.getItem('token'),
+
+  verify2FA: async (challengeToken: string, otp: string) => {
+    const res = await api.post('/auth/verify-2fa', { challenge_token: challengeToken, otp })
+    if (res.data.success) {
+      localStorage.setItem('token', res.data.token)
+      localStorage.setItem('user', JSON.stringify(res.data.user))
+    }
+    return res
+  },
 
   // Secretary invitation-based registration
   validateInvitation: (token: string) =>

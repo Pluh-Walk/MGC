@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { RowDataPacket } from 'mysql2'
 import pool from '../config/db'
 import { audit } from '../utils/audit'
+import { invalidateMaintenanceCache } from '../middleware/maintenance'
 
 // ─── Get All Settings ───────────────────────────────────────
 export const getAllSettings = async (_req: Request, res: Response): Promise<void> => {
@@ -58,6 +59,7 @@ export const updateSetting = async (req: Request, res: Response): Promise<void> 
     )
 
     await audit(req, 'ADMIN_UPDATE_SETTING', 'setting', existing.id, `${key}: "${oldValue}" → "${value}"`)
+    if (key === 'maintenance_mode') invalidateMaintenanceCache()
     res.json({ success: true, message: 'Setting updated.' })
   } catch (err: any) {
     console.error('[admin]', err)

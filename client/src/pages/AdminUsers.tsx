@@ -2,6 +2,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import {
   Users, Search, Plus, AlertCircle, CheckCircle2, X,
   Eye, Ban, RotateCcw, Trash2, ChevronLeft, ChevronRight,
+  Download, ShieldOff,
 } from 'lucide-react'
 import { adminApi } from '../services/api'
 
@@ -46,6 +47,12 @@ export default function AdminUsers() {
   const [suspendTarget, setSuspendTarget] = useState<UserRow | null>(null)
   const [suspendReason, setSuspendReason] = useState('')
 
+  // DSAR / Erase modal
+  const [eraseTarget, setEraseTarget] = useState<UserRow | null>(null)
+  const [eraseConfirmText, setEraseConfirmText] = useState('')
+  const [erasing, setErasing] = useState(false)
+  const [dsarLoading, setDsarLoading] = useState<number | null>(null)
+
   // Detail panel
   const [detailUser, setDetailUser] = useState<any>(null)
 
@@ -78,6 +85,40 @@ export default function AdminUsers() {
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to create user.')
     } finally { setCreating(false) }
+  }
+
+  const handleDsarExport = async (u: UserRow) => {
+    setDsarLoading(u.id)
+    try {
+      const res = await adminApi.dsarExport(u.id)
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `dsar-${u.username}-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setSuccess(`DSAR export downloaded for ${u.fullname}.`)
+    } catch {
+      setError('DSAR export failed.')
+    } finally {
+      setDsarLoading(null)
+    }
+  }
+
+  const handleErase = async () => {
+    if (!eraseTarget || eraseConfirmText !== 'ERASE') return
+    setErasing(true)
+    try {
+      await adminApi.eraseUser(eraseTarget.id)
+      setSuccess(`Data for ${eraseTarget.fullname} has been anonymised.`)
+      setEraseTarget(null)
+      setEraseConfirmText('')
+      fetchUsers()
+    } catch (e: any) {
+      setError(e.response?.data?.message ?? 'Erasure failed.')
+    } finally {
+      setErasing(false)
+    }
   }
 
   const handleSuspend = async () => {
@@ -230,6 +271,14 @@ export default function AdminUsers() {
                         <button className="action-icon-btn" title="View" onClick={() => viewDetail(u.id)}>
                           <Eye size={15} />
                         </button>
+                        <button
+                          className="action-icon-btn"
+                          title="Export Personal Data (DSAR)"
+                          onClick={() => handleDsarExport(u)}
+                          disabled={dsarLoading === u.id}
+                        >
+                          <Download size={15} />
+                        </button>
                         {u.status !== 'suspended' && (
                           <button className="action-icon-btn danger" title="Suspend" onClick={() => setSuspendTarget(u)}>
                             <Ban size={15} />
@@ -240,6 +289,9 @@ export default function AdminUsers() {
                             <RotateCcw size={15} />
                           </button>
                         )}
+                        <button className="action-icon-btn danger" title="Erase Personal Data" onClick={() => { setEraseTarget(u); setEraseConfirmText('') }}>
+                          <ShieldOff size={15} />
+                        </button>
                         <button className="action-icon-btn danger" title="Delete" onClick={() => handleDelete(u)}>
                           <Trash2 size={15} />
                         </button>
@@ -314,7 +366,43 @@ export default function AdminUsers() {
           </div>
         </div>
       )}
-
+      {/* ── Erase Data Modal ──────────────────────── */}
+      {eraseTarget && (
+        <div className="modal-overlay" onClick={() => setEraseTarget(null)}>
+          <div className="admin-suspend-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-top">
+              <h3><ShieldOff size={18} /> Erase Personal Data</h3>
+              <button className="action-icon-btn" onClick={() => setEraseTarget(null)}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: '0.5rem' }}>⚠️ This action is irreversible.</p>
+              <p style={{ fontSize: '0.88rem', marginBottom: '0.75rem' }}>
+                All personal data for <strong>{eraseTarget.fullname}</strong> will be anonymised in compliance with RA 10173 (Data Privacy Act). Case records and audit logs are preserved but PII is scrubbed.
+              </p>
+              <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>Type <strong>ERASE</strong> to confirm:</p>
+              <input
+                type="text"
+                className="field-input"
+                placeholder="ERASE"
+                value={eraseConfirmText}
+                onChange={e => setEraseConfirmText(e.target.value)}
+                style={{ marginBottom: '1rem' }}
+              />
+              <div className="modal-actions">
+                <button className="btn-secondary" onClick={() => setEraseTarget(null)}>Cancel</button>
+                <button
+                  className="btn-primary"
+                  style={{ background: 'var(--danger)' }}
+                  onClick={handleErase}
+                  disabled={eraseConfirmText !== 'ERASE' || erasing}
+                >
+                  {erasing ? 'Erasing…' : 'Erase Personal Data'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Suspend Modal ────────────────────────── */}
       {suspendTarget && (
         <div className="modal-overlay" onClick={() => setSuspendTarget(null)}>

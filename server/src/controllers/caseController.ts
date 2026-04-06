@@ -2,8 +2,13 @@ import { Request, Response } from 'express'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import pool from '../config/db'
 import { generateCaseNumber } from '../utils/caseNumber'
-import { notify } from '../utils/notify'
+import { notifyWithEmail } from '../utils/emailNotify'
 import { audit } from '../utils/audit'
+import {
+  caseAssignedEmail,
+  caseStatusChangedEmail,
+  caseClosedEmail,
+} from '../templates/emailTemplates'
 import { getCaseScope, getEffectiveAttorneyId } from '../utils/scope'
 
 // ─── Create Case ────────────────────────────────────────────
@@ -72,7 +77,14 @@ export const createCase = async (req: Request, res: Response): Promise<void> => 
 
     if (!isSecretary) {
       // Notify the client only when attorney directly creates
-      await notify(client_id, 'case_update', `A new case has been opened for you: ${title} (${case_number})`, caseId)
+      const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+      await notifyWithEmail(
+        client_id, 'case_update',
+        `A new case has been opened for you: ${title} (${case_number})`,
+        caseId,
+        `New Case: ${case_number} — ${title}`,
+        (name) => caseAssignedEmail(name, title, case_number, `${_origin}/cases/${caseId}`)
+      )
     }
 
     await audit(req, 'CASE_CREATED', 'case', caseId, `Case number: ${case_number}${isSecretary ? ' (draft)' : ''}`)
@@ -143,11 +155,13 @@ export const approveCaseDraft = async (req: Request, res: Response): Promise<voi
       [id, user.id]
     )
 
-    await notify(
-      existing[0].client_id,
-      'case_update',
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    await notifyWithEmail(
+      existing[0].client_id, 'case_update',
       `A new case has been opened for you: ${existing[0].title} (${existing[0].case_number})`,
-      Number(id)
+      Number(id),
+      `New Case: ${existing[0].case_number} — ${existing[0].title}`,
+      (name) => caseAssignedEmail(name, existing[0].title, existing[0].case_number, `${_origin}/cases/${id}`)
     )
 
     await audit(req, 'CASE_DRAFT_APPROVED', 'case', Number(id))
@@ -449,13 +463,20 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
          VALUES (?, 'status_change', ?, CURDATE(), ?)`,
         [id, timelineDesc, user.id]
       )
-      await notify(
-        existing[0].client_id,
-        'case_update',
+      const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+      const _link   = `${_origin}/cases/${id}`
+      await notifyWithEmail(
+        existing[0].client_id, 'case_update',
         newStatus === 'closed'
           ? `Your case "${existing[0].title}" has been closed. Outcome: ${outcome}`
           : `Case "${existing[0].title}" status updated to: ${newStatus}`,
-        Number(id)
+        Number(id),
+        newStatus === 'closed'
+          ? `Case Closed: ${existing[0].case_number}`
+          : `Case Update: ${existing[0].case_number}`,
+        (name) => newStatus === 'closed'
+          ? caseClosedEmail(name, existing[0].title, existing[0].case_number, outcome ?? '', _link)
+          : caseStatusChangedEmail(name, existing[0].title, existing[0].case_number, newStatus, _link)
       )
     }
 

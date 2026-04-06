@@ -6,12 +6,12 @@ import { enUS } from 'date-fns/locale'
 import { useNavigate } from 'react-router-dom'
 import {
   Scale, ArrowLeft, Plus, Calendar as CalIcon,
-  List, MapPin, FileText, Loader2, X,
+  List, MapPin, FileText, Loader2, X, Download,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
-import { hearingsApi, casesApi } from '../services/api'
+import api, { hearingsApi, casesApi } from '../services/api'
 
 const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
@@ -59,8 +59,9 @@ export default function Hearings() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing,   setEditing]   = useState<Hearing | null>(null)
   const [form,      setForm]      = useState({ ...BLANK })
-  const [saving,    setSaving]    = useState(false)
-  const [error,     setError]     = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [error,         setError]         = useState('')
+  const [exportingIcal, setExportingIcal] = useState(false)
 
   const isAttorney = user?.role === 'attorney'
   const canManage = user?.role === 'attorney' || user?.role === 'secretary'
@@ -129,6 +130,23 @@ export default function Hearings() {
     }
   }
 
+  const handleExportIcal = async () => {
+    setExportingIcal(true)
+    try {
+      const res = await api.get('/hearings/export/ical', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/calendar' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'mgc-hearings.ics'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      alert('Failed to export calendar.')
+    } finally {
+      setExportingIcal(false)
+    }
+  }
+
   const handleDelete = async (id: number) => {
     if (!confirm('Cancel this hearing?')) return
     await hearingsApi.delete(id)
@@ -169,6 +187,11 @@ export default function Hearings() {
           <NotificationBell />
           <SettingsDropdown />
         </div>
+        {exportingIcal && (
+          <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.3)', fontSize: '0.85rem' }}>
+            <Loader2 size={15} className="spin" /> Preparing calendar file…
+          </div>
+        )}
       </nav>
 
       <main className="dash-content">
@@ -196,6 +219,16 @@ export default function Hearings() {
                 <List size={14} /> List
               </button>
             </div>
+            <button
+              className="btn-secondary"
+              onClick={handleExportIcal}
+              disabled={exportingIcal}
+              title="Download .ics to import into Google Calendar, Outlook, etc."
+            >
+              {exportingIcal
+                ? <><Loader2 size={14} className="spin" /> Exporting…</>
+                : <><Download size={14} /> Export to Calendar</>}
+            </button>
             {canManage && (
               <button className="btn-primary" onClick={openCreate}>
                 <Plus size={16} /> Schedule Hearing

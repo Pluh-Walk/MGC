@@ -5,6 +5,11 @@ import {
   downloadDocument,
   deleteDocument,
 } from '../controllers/documentController'
+import {
+  listDocumentVersions,
+  uploadDocumentVersion,
+  downloadDocumentVersion,
+} from '../controllers/documentVersionController'
 import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 import upload from '../config/upload'
 
@@ -28,5 +33,14 @@ router.get('/documents/:id/download', authMiddleware, requireAttorneyScope, down
 
 // Soft delete — attorney only
 router.delete('/documents/:id', authMiddleware, requireRole('attorney'), deleteDocument)
+
+// ─── Document Versioning ─────────────────────────────────────────────
+router.get('/cases/:caseId/documents/:docId/versions',
+  authMiddleware, requireAttorneyScope, listDocumentVersions)
+router.post('/cases/:caseId/documents/:docId/versions',
+  authMiddleware, requireRole('attorney', 'secretary'), requireAttorneyScope,
+  upload.single('file'), uploadDocumentVersion)
+router.get('/cases/:caseId/documents/:docId/versions/:versionId',
+  authMiddleware, requireAttorneyScope, downloadDocumentVersion)
 
 export default router

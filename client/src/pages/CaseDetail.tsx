@@ -3,10 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Scale, ArrowLeft, FileText, Clock, StickyNote, Upload,
   CheckCircle, AlertCircle, Paperclip, Lock, Globe, Trash2,
-  Pencil, CheckCircle2, X, Users, CalendarClock, AlertTriangle, Plus,
+  Pencil, CheckCircle2, X, Users, CalendarClock, AlertTriangle, Plus, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
+import InvoiceManager from '../components/InvoiceManager'
+import TimeTracker from '../components/TimeTracker'
 import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tagsApi } from '../services/api'
 
 type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel'
@@ -102,6 +104,12 @@ export default function CaseDetail() {
   const [caseTags, setCaseTags] = useState<any[]>([])
   const [allTags, setAllTags] = useState<any[]>([])
   const [showTagPicker, setShowTagPicker] = useState(false)
+
+  // Document versioning state
+  const [expandedDocId, setExpandedDocId] = useState<number | null>(null)
+  const [docVersions, setDocVersions] = useState<Record<number, any[]>>({})
+  const [versionsLoading, setVersionsLoading] = useState<Record<number, boolean>>({})
+  const [uploadingVersion, setUploadingVersion] = useState<Record<number, boolean>>({})
 
   const fetchCase = async () => {
     try {
@@ -407,6 +415,46 @@ export default function CaseDetail() {
       await documentsApi.delete(docId)
       fetchDocs()
     } catch {}
+  }
+
+  const toggleVersions = async (docId: number) => {
+    if (expandedDocId === docId) { setExpandedDocId(null); return }
+    setExpandedDocId(docId)
+    if (docVersions[docId]) return  // already loaded
+    setVersionsLoading(v => ({ ...v, [docId]: true }))
+    try {
+      const res = await documentsApi.listVersions(Number(id), docId)
+      setDocVersions(v => ({ ...v, [docId]: res.data.data }))
+    } catch {}
+    finally { setVersionsLoading(v => ({ ...v, [docId]: false })) }
+  }
+
+  const handleUploadVersion = async (docId: number, file: File, notes: string) => {
+    setUploadingVersion(v => ({ ...v, [docId]: true }))
+    const fd = new FormData()
+    fd.append('file', file)
+    if (notes) fd.append('notes', notes)
+    try {
+      await documentsApi.uploadVersion(Number(id), docId, fd)
+      // Reload versions list
+      const res = await documentsApi.listVersions(Number(id), docId)
+      setDocVersions(v => ({ ...v, [docId]: res.data.data }))
+      fetchDocs()  // refresh main list so filename updates
+    } catch (e: any) {
+      alert(e.response?.data?.message ?? 'Upload failed.')
+    } finally {
+      setUploadingVersion(v => ({ ...v, [docId]: false }))
+    }
+  }
+
+  const handleDownloadVersion = async (docId: number, versionId: number, originalName: string) => {
+    try {
+      const res = await documentsApi.downloadVersion(Number(id), docId, versionId)
+      const url = URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url; a.download = originalName; a.click()
+      URL.revokeObjectURL(url)
+    } catch { alert('Download failed.') }
   }
 
   if (loading) return <div className="dashboard"><main className="dash-content"><div className="loading-state">Loading case…</div></main></div>
@@ -785,38 +833,101 @@ export default function CaseDetail() {
             ) : (
               <div className="doc-list">
                 {docs.map((d: any) => (
-                  <div key={d.id} className="doc-item">
-                    <div className="doc-icon"><FileText size={18} /></div>
-                    <div className="doc-info">
-                      <span className="doc-name">{d.original_name}</span>
-                      <span className="doc-meta">
-                        {d.category} · {(d.file_size / 1024).toFixed(1)} KB · {new Date(d.uploaded_at).toLocaleDateString()}
-                        {d.privilege_type && d.privilege_type !== 'none' && (
-                          <span style={{ marginLeft: 6, background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', borderRadius: 10, padding: '0 6px', fontSize: '0.75rem', fontWeight: 600 }}>
-                            <Lock size={10} style={{ verticalAlign: 'text-bottom', marginRight: 2 }} />
-                            {d.privilege_type.replace(/_/g,' ')}
-                          </span>
+                  <div key={d.id}>
+                    <div className="doc-item">
+                      <div className="doc-icon"><FileText size={18} /></div>
+                      <div className="doc-info">
+                        <span className="doc-name">{d.original_name}</span>
+                        <span className="doc-meta">
+                          {d.category} · {(d.file_size / 1024).toFixed(1)} KB · {new Date(d.uploaded_at).toLocaleDateString()}
+                          {d.privilege_type && d.privilege_type !== 'none' && (
+                            <span style={{ marginLeft: 6, background: '#fef9c3', color: '#854d0e', border: '1px solid #fde047', borderRadius: 10, padding: '0 6px', fontSize: '0.75rem', fontWeight: 600 }}>
+                              <Lock size={10} style={{ verticalAlign: 'text-bottom', marginRight: 2 }} />
+                              {d.privilege_type.replace(/_/g,' ')}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="doc-actions">
+                        <a href={documentsApi.downloadUrl(d.id)} className="btn-small" target="_blank" rel="noreferrer">Download</a>
+                        {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                          <button
+                            className="btn-small"
+                            style={{ fontSize: '0.75rem' }}
+                            onClick={() => toggleVersions(d.id)}
+                            title="Version history"
+                          >
+                            History {expandedDocId === d.id ? '▲' : '▼'}
+                          </button>
                         )}
-                      </span>
+                        {user?.role === 'attorney' && (
+                          <button className="btn-small btn-danger" onClick={() => handleDeleteDoc(d.id)}>
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="doc-actions">
-                      <a
-                        href={documentsApi.downloadUrl(d.id)}
-                        className="btn-small"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Download
-                      </a>
-                      {user?.role === 'attorney' && (
-                        <button
-                          className="btn-small btn-danger"
-                          onClick={() => handleDeleteDoc(d.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
+
+                    {/* ── Version History Panel ── */}
+                    {expandedDocId === d.id && (
+                      <div style={{ background: 'var(--bg-sidebar, #1a1f2e)', border: '1px solid var(--border)', borderRadius: 8, margin: '0 0 0.5rem 2.5rem', padding: '1rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Version History</span>
+                          <label style={{ cursor: 'pointer' }}>
+                            <input
+                              type="file"
+                              hidden
+                              disabled={uploadingVersion[d.id]}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                const notes = window.prompt('Notes for this version (optional):', '') ?? ''
+                                await handleUploadVersion(d.id, file, notes)
+                                e.target.value = ''
+                              }}
+                            />
+                            <span className="btn-small" style={{ pointerEvents: 'none' }}>
+                              {uploadingVersion[d.id] ? <><Loader2 size={12} className="spin" /> Uploading…</> : <><Upload size={12} /> Upload New Version</>}
+                            </span>
+                          </label>
+                        </div>
+
+                        {versionsLoading[d.id] ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+                            <Loader2 size={14} className="spin" /> Loading versions…
+                          </div>
+                        ) : !docVersions[d.id]?.length ? (
+                          <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0 }}>No versions recorded yet. Upload a new version above to start tracking.</p>
+                        ) : (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Ver.</th>
+                                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Filename</th>
+                                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Uploaded by</th>
+                                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Date</th>
+                                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', fontWeight: 600 }}>Notes</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {docVersions[d.id].map((v: any) => (
+                                <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <td style={{ padding: '0.4rem 0.5rem', fontWeight: 700 }}>v{v.version_number}</td>
+                                  <td style={{ padding: '0.4rem 0.5rem' }}>{v.original_name}</td>
+                                  <td style={{ padding: '0.4rem 0.5rem' }}>{v.uploader_name}</td>
+                                  <td style={{ padding: '0.4rem 0.5rem', whiteSpace: 'nowrap' }}>{new Date(v.uploaded_at).toLocaleDateString()}</td>
+                                  <td style={{ padding: '0.4rem 0.5rem', color: 'var(--text-muted)' }}>{v.notes ?? '—'}</td>
+                                  <td style={{ padding: '0.4rem 0.5rem' }}>
+                                    <button className="btn-small" onClick={() => handleDownloadVersion(d.id, v.id, v.original_name)}>↓</button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1129,6 +1240,28 @@ export default function CaseDetail() {
                   Total: ₱{Number(billingTotal).toLocaleString('en-PH',{minimumFractionDigits:2})}
                 </div>
               </div>
+            )}
+
+            {/* ── Invoices ────────────────────────────── */}
+            <InvoiceManager
+              caseId={Number(id)}
+              billingEntries={billingEntries}
+              onRefreshBilling={() => billingApi.list(Number(id)).then(r => {
+                const entries = r.data.data ?? []
+                setBillingEntries(entries)
+                setBillingTotal(entries.reduce((s: number, e: any) => s + Number(e.amount), 0))
+              })}
+            />
+
+            {/* ── Time Tracking ───────────────────────── */}
+            {(user?.role === 'attorney' || user?.role === 'secretary') && (
+              <TimeTracker caseId={Number(id)} onBillingCreated={() =>
+                billingApi.list(Number(id)).then(r => {
+                  const entries = r.data.data ?? []
+                  setBillingEntries(entries)
+                  setBillingTotal(entries.reduce((s: number, e: any) => s + Number(e.amount), 0))
+                })
+              } />
             )}
           </div>
         )}

@@ -2,8 +2,9 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Scale, ArrowLeft, Send, MessageSquare, Search, Loader2, Plus,
-  Paperclip, X, FileText, Image, MoreHorizontal, Trash2,
+  Paperclip, X, FileText, Image, MoreHorizontal, Trash2, Check, CheckCheck,
 } from 'lucide-react'
+import { io as socketIO, Socket } from 'socket.io-client'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
@@ -95,10 +96,19 @@ export default function Messages() {
   const [menuId,         setMenuId]         = useState<number | null>(null)
   const [editingId,      setEditingId]      = useState<number | null>(null)
   const [editDraft,      setEditDraft]      = useState('')
+  const [partnerTyping,  setPartnerTyping]  = useState(false)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileRef   = useRef<HTMLInputElement>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const activeIdRef = useRef<number | null>(null)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const userIdRef = useRef<number | undefined>(undefined)
+
+  // Keep refs in sync
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  useEffect(() => { userIdRef.current = user?.id }, [user])
 
   const dashboardPath = user?.role === 'attorney' ? '/dashboard/attorney'
     : user?.role === 'secretary' ? '/dashboard/secretary'
@@ -136,6 +146,61 @@ export default function Messages() {
 
   useEffect(() => { loadConversations() }, [loadConversations])
 
+  // ── Socket.io connection ────────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const socketUrl = import.meta.env.DEV ? 'http://localhost:5000' : window.location.origin
+    const socket = socketIO(socketUrl, {
+      auth: { token },
+      path: '/socket.io',
+    })
+    socketRef.current = socket
+
+    socket.on('message:new', (msg: any) => {
+      const senderId = msg.sender_id
+      // If currently viewing this sender's thread, append message
+      if (activeIdRef.current === senderId) {
+        setThread(prev => [...prev, msg])
+        // Mark as read
+        socket.emit('messages:read', { from: senderId })
+      } else {
+        // Bump unread count in conversation list
+        setConversations(prev => {
+          const exists = prev.some(c => c.partner_id === senderId)
+          if (exists) {
+            return prev.map(c => c.partner_id === senderId
+              ? { ...c, unread_count: c.unread_count + 1, last_message: msg.content, last_at: msg.created_at }
+              : c
+            )
+          }
+          // New conversation — reload list
+          loadConversations()
+          return prev
+        })
+      }
+    })
+
+    socket.on('typing:start', (data: { from: number }) => {
+      if (activeIdRef.current === data.from) setPartnerTyping(true)
+    })
+    socket.on('typing:stop', (data: { from: number }) => {
+      if (activeIdRef.current === data.from) setPartnerTyping(false)
+    })
+
+    // Real-time seen receipts — mark all my outgoing messages as read
+    socket.on('messages:read', (data: { by: number }) => {
+      if (activeIdRef.current === data.by) {
+        setThread(prev => prev.map(m =>
+          m.sender_id === userIdRef.current ? { ...m, is_read: true } : m
+        ))
+      }
+    })
+
+    return () => { socket.disconnect() }
+  }, [loadConversations])
+
   // ── Load contacts ───────────────────────────────────────
   useEffect(() => {
     messagesApi.contacts().then(r => setContacts(r.data.data))
@@ -150,6 +215,10 @@ export default function Messages() {
       setConversations(prev =>
         prev.map(c => c.partner_id === partnerId ? { ...c, unread_count: 0 } : c)
       )
+      // Tell the partner that we've read their messages
+      if (socketRef.current) {
+        socketRef.current.emit('messages:read', { from: partnerId })
+      }
     } finally {
       setLoadingThread(false)
     }
@@ -158,7 +227,8 @@ export default function Messages() {
   useEffect(() => {
     if (!activeId) return
     loadThread(activeId)
-    pollRef.current = setInterval(() => loadThread(activeId), 10_000)
+    // Polling is fallback only; socket handles real-time updates
+    pollRef.current = setInterval(() => loadThread(activeId), 30_000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeId, loadThread])
 
@@ -208,6 +278,9 @@ export default function Messages() {
     const text = draft.trim()
     const file = attachment
     setDraft('')
+    // Stop typing indicator immediately on send
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    if (activeId && socketRef.current) socketRef.current.emit('typing:stop', { to: activeId })
     if (attachPreview) URL.revokeObjectURL(attachPreview)
     setAttachment(null)
     setAttachPreview(null)
@@ -475,6 +548,13 @@ export default function Messages() {
                                   on behalf of {m.attorney_name ?? 'attorney'}
                                 </span>
                               )}
+                            {mine && (
+                              <span className="msg-status" title={m.is_read ? 'Seen' : 'Sent'}>
+                                {m.is_read
+                                  ? <CheckCheck size={12} style={{ color: '#3b82f6', verticalAlign: 'middle' }} />
+                                  : <Check size={12} style={{ color: 'rgba(15,23,42,0.45)', verticalAlign: 'middle' }} />}
+                              </span>
+                            )}
                               {m.edited_at && <span className="msg-edited">edited</span>}
                               <span className="bubble-time">
                                 {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -501,6 +581,12 @@ export default function Messages() {
                   )
                 })}
                 <div ref={bottomRef} />
+                {partnerTyping && (
+                  <div className="typing-indicator">
+                    <span className="typing-bubble" /><span className="typing-bubble" /><span className="typing-bubble" />
+                    <span style={{ marginLeft: 6, color: '#64748b', fontSize: '0.78rem' }}>{activeName} is typing…</span>
+                  </div>
+                )}
               </div>
 
               {/* ── Compose ──────────────────────────────── */}
@@ -529,7 +615,22 @@ export default function Messages() {
                     rows={1}
                     placeholder="Type a message…"
                     value={draft}
-                    onChange={e => setDraft(e.target.value)}
+                    onChange={e => {
+                      setDraft(e.target.value)
+                      if (activeId && socketRef.current) {
+                        if (e.target.value) {
+                          socketRef.current.emit('typing:start', { to: activeId })
+                          // Auto-stop after 1.5 s of no keystrokes
+                          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                          typingTimeoutRef.current = setTimeout(() => {
+                            socketRef.current?.emit('typing:stop', { to: activeId })
+                          }, 1500)
+                        } else {
+                          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                          socketRef.current.emit('typing:stop', { to: activeId })
+                        }
+                      }
+                    }}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
                     }}

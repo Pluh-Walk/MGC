@@ -3,24 +3,77 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // send httpOnly refresh token cookie on every request
 })
 
-// Attach JWT token to every request automatically
+// Attach JWT access token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-// Handle 401/403 globally
+// ─── Flag to prevent multiple simultaneous refresh attempts ──
+let isRefreshing = false
+let failedQueue: Array<{ resolve: (t: string) => void; reject: (e: unknown) => void }> = []
+
+const processQueue = (error: unknown, token: string | null) => {
+  failedQueue.forEach((p) => (token ? p.resolve(token) : p.reject(error)))
+  failedQueue = []
+}
+
+// Handle 401 (expired access token) with auto-refresh
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
+  async (err) => {
+    const original = err.config
+
+    // Auto-refresh on 401 — but not for the refresh endpoint itself (avoids infinite loop)
+    if (
+      err.response?.status === 401 &&
+      !original._retry &&
+      !original.url?.includes('/auth/refresh') &&
+      !original.url?.includes('/auth/login')
+    ) {
+      if (isRefreshing) {
+        // Queue the request until the refresh completes
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject })
+        }).then((token) => {
+          original.headers.Authorization = `Bearer ${token}`
+          return api(original)
+        })
+      }
+
+      original._retry = true
+      isRefreshing = true
+
+      try {
+        const { data } = await axios.post('/api/auth/refresh', {}, { withCredentials: true })
+        const newToken: string = data.token
+        localStorage.setItem('token', newToken)
+        api.defaults.headers.common.Authorization = `Bearer ${newToken}`
+        original.headers.Authorization = `Bearer ${newToken}`
+        processQueue(null, newToken)
+        return api(original)
+      } catch (refreshErr) {
+        processQueue(refreshErr, null)
+        // Refresh failed — session is truly expired
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        window.location.href = '/login'
+        return Promise.reject(refreshErr)
+      } finally {
+        isRefreshing = false
+      }
     }
+
+    if (err.response?.status === 503 && err.response?.data?.maintenance) {
+      // Server is in maintenance mode — broadcast so every page can react
+      window.dispatchEvent(new CustomEvent('maintenance-mode', { detail: { active: true, message: err.response.data.message } }))
+      return Promise.reject(err)
+    }
+
     if (err.response?.status === 403) {
       // Account suspended or inactive — clear session and redirect
       const msg = err.response?.data?.message || ''
@@ -88,6 +141,39 @@ export const billingApi = {
     api.patch(`/cases/${caseId}/billing/${entryId}`, data),
   delete: (caseId: number, entryId: number) =>
     api.delete(`/cases/${caseId}/billing/${entryId}`),
+}
+
+// ─── Invoices ─────────────────────────────────────────────
+export const invoiceApi = {
+  list:    (caseId: number) => api.get(`/cases/${caseId}/invoices`),
+  get:     (caseId: number, invoiceId: number) => api.get(`/cases/${caseId}/invoices/${invoiceId}`),
+  create:  (caseId: number, data: { entry_ids: number[]; due_date?: string; notes?: string; tax_rate?: number }) =>
+    api.post(`/cases/${caseId}/invoices`, data),
+  pdfUrl:  (caseId: number, invoiceId: number) => `/api/cases/${caseId}/invoices/${invoiceId}/pdf`,
+  downloadPdf: (caseId: number, invoiceId: number) =>
+    api.get(`/cases/${caseId}/invoices/${invoiceId}/pdf`, { responseType: 'blob' }),
+  send:    (caseId: number, invoiceId: number) => api.post(`/cases/${caseId}/invoices/${invoiceId}/send`),
+  pay:     (caseId: number, invoiceId: number, data: { paid_reference?: string }) =>
+    api.post(`/cases/${caseId}/invoices/${invoiceId}/pay`, data),
+  void_:   (caseId: number, invoiceId: number) => api.put(`/cases/${caseId}/invoices/${invoiceId}/void`),
+}
+
+// ─── Time Tracking ─────────────────────────────────────────
+export const timeTrackingApi = {
+  list:    (caseId: number) => api.get(`/cases/${caseId}/time`),
+  summary: (caseId: number) => api.get(`/cases/${caseId}/time/summary`),
+  start:   (caseId: number, data: { description?: string; is_billable?: boolean }) =>
+    api.post(`/cases/${caseId}/time`, { ...data, action: 'start' }),
+  create:  (caseId: number, data: { description?: string; duration_sec: number; is_billable?: boolean; started_at?: string }) =>
+    api.post(`/cases/${caseId}/time`, data),
+  stop:    (caseId: number, entryId: number, endedAt?: string) =>
+    api.patch(`/cases/${caseId}/time/${entryId}`, { ended_at: endedAt ?? new Date().toISOString() }),
+  update:  (caseId: number, entryId: number, data: object) =>
+    api.patch(`/cases/${caseId}/time/${entryId}`, data),
+  delete_: (caseId: number, entryId: number) =>
+    api.delete(`/cases/${caseId}/time/${entryId}`),
+  bill:    (caseId: number, entryId: number, data: { rate: number; description?: string }) =>
+    api.post(`/cases/${caseId}/time/${entryId}/bill`, data),
 }
 
 // ─── Case Relations ───────────────────────────────────────
@@ -170,6 +256,15 @@ export const documentsApi = {
   downloadUrl: (id: number) => `/api/documents/${id}/download`,
   download: (id: number) => api.get(`/documents/${id}/download`, { responseType: 'blob' }),
   delete: (id: number) => api.delete(`/documents/${id}`),
+  // ─── Versioning ──────────────────────────────────────────
+  listVersions:    (caseId: number, docId: number) =>
+    api.get(`/cases/${caseId}/documents/${docId}/versions`),
+  uploadVersion:   (caseId: number, docId: number, formData: FormData) =>
+    api.post(`/cases/${caseId}/documents/${docId}/versions`, formData, {
+      headers: { 'Content-Type': undefined },
+    }),
+  downloadVersion: (caseId: number, docId: number, versionId: number) =>
+    api.get(`/cases/${caseId}/documents/${docId}/versions/${versionId}`, { responseType: 'blob' }),
 }
 
 // ─── Notifications ──────────────────────────────────────────────
@@ -280,6 +375,12 @@ export const adminApi = {
   // Reports
   userReport:      () => api.get('/admin/reports/users'),
   caseReport:      () => api.get('/admin/reports/cases'),
+
+  // Data Privacy (RA 10173 / DSAR)
+  dsarExport: (userId: number) =>
+    api.get(`/admin/privacy/dsar/${userId}`, { responseType: 'blob' }),
+  eraseUser: (userId: number) =>
+    api.post(`/admin/privacy/erase/${userId}`),
 }
 
 // ─── Admin: Settings ──────────────────────────────────────

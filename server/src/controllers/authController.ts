@@ -1,10 +1,17 @@
 import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
+import speakeasy from 'speakeasy'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import Tesseract from 'tesseract.js'
 import pool from '../config/db'
 import { audit } from '../utils/audit'
+import {
+  signAccessToken,
+  issueRefreshToken,
+  clearRefreshCookie,
+} from '../utils/authTokens'
+import { generateAndStoreBackupCodes } from './twoFactorController'
 
 // ─── helpers ───────────────────────────────────────────────
 
@@ -223,6 +230,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await logLoginAttempt(user.email, ip, true)
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
 
+    // ── 2FA gate: if enabled, return a challenge token instead of a full session
+    if (user.totp_enabled) {
+      // Issue a short-lived (5-min) challenge JWT containing only the user id — no role/access
+      const challengeToken = signAccessToken({ id: user.id, fullname: '', username: '', role: user.role, _2fa_challenge: true } as any)
+      res.json({
+        success: true,
+        totp_required: true,
+        challenge_token: challengeToken,
+        message: 'OTP required.',
+      })
+      return
+    }
+
     // ── Resolve attorney link for secretaries
     let attorneyId: number | undefined
     if (user.role === 'secretary') {
@@ -233,15 +253,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       attorneyId = link?.attorney_id ?? undefined
     }
 
-    // ── sign JWT
-    const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
-    const payload: Record<string, unknown> = { id: user.id, fullname: user.fullname, username: user.username, role: user.role }
-    if (attorneyId !== undefined) payload.attorneyId = attorneyId
-    const token = jwt.sign(
-      payload,
-      process.env.JWT_SECRET as string,
-      { expiresIn }
-    )
+    // ── Issue short-lived access token + httpOnly refresh token cookie
+    const payload = { id: user.id, fullname: user.fullname, username: user.username, role: user.role, ...(attorneyId !== undefined ? { attorneyId } : {}) }
+    const token = signAccessToken(payload)
+    await issueRefreshToken(user.id, req, res)
 
     await audit(req, 'USER_LOGIN', 'user', user.id)
 
@@ -430,6 +445,201 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
     res.json({ success: true, user })
   } catch (err) {
     console.error('[getMe]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── REFRESH ACCESS TOKEN ──────────────────────────────────
+
+export const refreshToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const raw = req.cookies?.refresh_token as string | undefined
+    if (!raw) {
+      res.status(401).json({ success: false, message: 'No refresh token.' })
+      return
+    }
+
+    const hash = crypto.createHash('sha256').update(raw).digest('hex')
+
+    const [[stored]] = await pool.query<RowDataPacket[]>(
+      `SELECT * FROM refresh_tokens
+       WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()`,
+      [hash]
+    )
+
+    if (!stored) {
+      res.status(401).json({ success: false, message: 'Invalid or expired refresh token.' })
+      return
+    }
+
+    // Rotate: revoke the consumed token immediately
+    await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = ?',
+      [stored.id]
+    )
+
+    // Verify the user is still active
+    const [[user]] = await pool.query<RowDataPacket[]>(
+      'SELECT id, fullname, username, role, status FROM users WHERE id = ?',
+      [stored.user_id]
+    )
+
+    if (!user || user.status !== 'active') {
+      clearRefreshCookie(res)
+      res.status(403).json({ success: false, message: 'Account is not active.' })
+      return
+    }
+
+    // Resolve attorney link for secretaries
+    let attorneyId: number | undefined
+    if (user.role === 'secretary') {
+      const [[link]] = await pool.query<RowDataPacket[]>(
+        `SELECT attorney_id FROM attorney_secretaries WHERE secretary_id = ? AND status = 'active' LIMIT 1`,
+        [user.id]
+      )
+      attorneyId = link?.attorney_id ?? undefined
+    }
+
+    // Issue new access token + new refresh token (rotation)
+    const payload = {
+      id: user.id,
+      fullname: user.fullname,
+      username: user.username,
+      role: user.role,
+      ...(attorneyId !== undefined ? { attorneyId } : {}),
+    }
+    const accessToken = signAccessToken(payload)
+    await issueRefreshToken(user.id, req, res)
+
+    res.json({ success: true, token: accessToken })
+  } catch (err) {
+    console.error('[refreshToken]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── LOGOUT ───────────────────────────────────────────────
+
+export const logoutUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const raw = req.cookies?.refresh_token as string | undefined
+    if (raw) {
+      const hash = crypto.createHash('sha256').update(raw).digest('hex')
+      await pool.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ?',
+        [hash]
+      )
+    }
+    clearRefreshCookie(res)
+    res.json({ success: true, message: 'Logged out.' })
+  } catch (err) {
+    console.error('[logoutUser]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── VERIFY 2FA OTP (after login challenge) ───────────────
+
+export const verify2FA = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { challenge_token, otp } = req.body as { challenge_token: string; otp: string }
+
+    if (!challenge_token || !otp) {
+      res.status(400).json({ success: false, message: 'Challenge token and OTP are required.' })
+      return
+    }
+
+    // Decode challenge token (short-lived, issued during login gate)
+    let challengePayload: any
+    try {
+      const jwt = await import('jsonwebtoken')
+      challengePayload = jwt.default.verify(challenge_token, process.env.JWT_SECRET as string)
+    } catch {
+      res.status(401).json({ success: false, message: 'Challenge token is invalid or expired.' })
+      return
+    }
+
+    if (!challengePayload._2fa_challenge) {
+      res.status(401).json({ success: false, message: 'Invalid challenge token.' })
+      return
+    }
+
+    const userId = challengePayload.id as number
+
+    const [[user]] = await pool.query<RowDataPacket[]>(
+      'SELECT * FROM users WHERE id = ?', [userId]
+    )
+
+    if (!user || !user.totp_enabled) {
+      res.status(400).json({ success: false, message: 'Invalid request.' })
+      return
+    }
+
+    // Check TOTP first
+    const totpValid = speakeasy.totp.verify({
+      secret: user.totp_secret,
+      encoding: 'base32',
+      token: otp,
+      window: 1,
+    })
+
+    if (!totpValid) {
+      // Try backup code
+      const inputHash = crypto.createHash('sha256').update(otp.toUpperCase()).digest('hex')
+      const [[backupRow]] = await pool.query<RowDataPacket[]>(
+        `SELECT id FROM two_factor_backup_codes
+         WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`,
+        [userId, inputHash]
+      )
+
+      if (!backupRow) {
+        res.status(422).json({ success: false, message: 'Invalid OTP or backup code.' })
+        return
+      }
+      // Consume the backup code
+      await pool.query(
+        'UPDATE two_factor_backup_codes SET used_at = NOW() WHERE id = ?',
+        [backupRow.id]
+      )
+      await audit(req, '2FA_BACKUP_CODE_USED', 'user', userId)
+    }
+
+    // Resolve attorney link for secretaries
+    let attorneyId: number | undefined
+    if (user.role === 'secretary') {
+      const [[link]] = await pool.query<RowDataPacket[]>(
+        `SELECT attorney_id FROM attorney_secretaries WHERE secretary_id = ? AND status = 'active' LIMIT 1`,
+        [userId]
+      )
+      attorneyId = link?.attorney_id ?? undefined
+    }
+
+    const payload = {
+      id: user.id,
+      fullname: user.fullname,
+      username: user.username,
+      role: user.role,
+      ...(attorneyId !== undefined ? { attorneyId } : {}),
+    }
+    const accessToken = signAccessToken(payload)
+    await issueRefreshToken(user.id, req, res)
+
+    await audit(req, 'USER_LOGIN_2FA', 'user', user.id)
+
+    res.json({
+      success: true,
+      token: accessToken,
+      user: {
+        id: user.id,
+        fullname: user.fullname,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    })
+  } catch (err) {
+    console.error('[verify2FA]', err)
     res.status(500).json({ success: false, message: 'Server error.' })
   }
 }

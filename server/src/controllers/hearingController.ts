@@ -2,8 +2,10 @@ import { Request, Response } from 'express'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import pool from '../config/db'
 import { notify } from '../utils/notify'
+import { notifyWithEmail } from '../utils/emailNotify'
 import { getEffectiveAttorneyId, getCaseScope } from '../utils/scope'
 import { audit } from '../utils/audit'
+import { hearingScheduledEmail, hearingUpdatedEmail } from '../templates/emailTemplates'
 
 // ─── List Hearings ───────────────────────────────────────────
 export const getHearings = async (req: Request, res: Response): Promise<void> => {
@@ -39,7 +41,7 @@ export const createHearing = async (req: Request, res: Response): Promise<void> 
 
     // Verify attorney (or secretary's attorney) owns this case
     const [[caseRow]] = await pool.query<RowDataPacket[]>(
-      'SELECT id, client_id, case_number FROM cases WHERE id = ? AND attorney_id = ? AND deleted_at IS NULL',
+      'SELECT id, client_id, case_number, title AS case_title, attorney_id FROM cases WHERE id = ? AND attorney_id = ? AND deleted_at IS NULL',
       [case_id, effectiveAttorneyId]
     )
     if (!caseRow) {
@@ -53,13 +55,26 @@ export const createHearing = async (req: Request, res: Response): Promise<void> 
       [case_id, title, hearing_type ?? 'other', scheduled_at, location ?? null, notes ?? null]
     )
 
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    const _link   = `${_origin}/hearings`
+
     // Notify client
-    await notify(
-      caseRow.client_id,
-      'hearing_reminder',
+    await notifyWithEmail(
+      caseRow.client_id, 'hearing_reminder',
       `A new hearing "${title}" has been scheduled for case ${caseRow.case_number}.`,
-      result.insertId
+      result.insertId,
+      `Hearing Scheduled: ${title}`,
+      (name) => hearingScheduledEmail(name, caseRow.case_title, caseRow.case_number, title, scheduled_at, location ?? null, _link)
     )
+
+    // If a secretary scheduled this, also notify the attorney
+    if (user.role === 'secretary') {
+      await notify(
+        caseRow.attorney_id, 'hearing_reminder',
+        `Your secretary scheduled a hearing "${title}" for case ${caseRow.case_number}.`,
+        result.insertId
+      )
+    }
 
     await audit(req, 'HEARING_CREATED', 'hearing', result.insertId, `Case: ${caseRow.case_number}`)
 
@@ -79,7 +94,8 @@ export const updateHearing = async (req: Request, res: Response): Promise<void> 
 
     // Verify attorney (or secretary's attorney) owns the hearing's case
     const [[hearing]] = await pool.query<RowDataPacket[]>(
-      `SELECT h.id, c.client_id, c.case_number FROM hearings h
+      `SELECT h.id, h.title AS hearing_title, c.client_id, c.case_number, c.title AS case_title
+       FROM hearings h
        JOIN cases c ON h.case_id = c.id
        WHERE h.id = ? AND c.attorney_id = ?`,
       [id, effectiveAttorneyId]
@@ -99,11 +115,13 @@ export const updateHearing = async (req: Request, res: Response): Promise<void> 
     )
 
     if (status) {
-      await notify(
-        hearing.client_id,
-        'hearing_reminder',
-        `Hearing "${title ?? 'your hearing'}" status updated to "${status}" (${hearing.case_number}).`,
-        Number(id)
+      const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+      await notifyWithEmail(
+        hearing.client_id, 'hearing_reminder',
+        `Hearing "${title ?? hearing.hearing_title}" status updated to "${status}" (${hearing.case_number}).`,
+        Number(id),
+        `Hearing Update: ${title ?? hearing.hearing_title}`,
+        (name) => hearingUpdatedEmail(name, hearing.case_title, hearing.case_number, title ?? hearing.hearing_title, status, `${_origin}/hearings`)
       )
     }
 

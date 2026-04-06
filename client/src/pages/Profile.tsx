@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
+import TwoFactorSetup from '../components/TwoFactorSetup'
 import { profileApi, casesApi, reviewsApi } from '../services/api'
 
 const AVAIL_OPTIONS = [
@@ -1258,6 +1259,11 @@ export default function Profile() {
                   <button className="btn-primary" style={{ marginTop: '0.5rem' }} onClick={handlePasswordChange} disabled={pwSaving}>
                     {pwSaving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Update Password</>}
                   </button>
+                </div>
+
+                <div className="atty-security-section">
+                  <h4>Two-Factor Authentication</h4>
+                  <TwoFactorSetup role={user?.role || ''} />
                 </div>
 
                 <div className="atty-security-info">

@@ -1,7 +1,7 @@
 import pool from '../config/db'
 import { ResultSetHeader } from 'mysql2'
 
-type NotificationType =
+export type NotificationType =
   | 'hearing_reminder'
   | 'case_update'
   | 'document_uploaded'
@@ -9,6 +9,12 @@ type NotificationType =
   | 'announcement'
   | 'password_reset'
   | 'deadline_reminder'
+  | 'message_received'
+  | 'account_suspended'
+  | 'account_reactivated'
+  | 'secretary_removed'
+  | 'invoice_sent'
+  | 'payment_received'
 
 /**
  * Creates a notification record for a user.

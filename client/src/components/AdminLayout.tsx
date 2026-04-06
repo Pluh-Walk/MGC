@@ -9,12 +9,12 @@ import {
   BarChart3,
   Megaphone,
   Scale,
-  User,
   LogOut,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import NotificationBell from './NotificationBell'
 import UserAvatar from './UserAvatar'
+import GlobalSearch from './GlobalSearch'
 
 const navItems = [
   { to: '/dashboard/admin',      icon: LayoutDashboard, label: 'Dashboard' },
@@ -46,10 +46,8 @@ export default function AdminLayout() {
         </div>
         <div className="dash-nav-right">
           <span className="role-badge admin">Admin</span>
+          <GlobalSearch />
           <NotificationBell />
-          <button className="icon-btn" onClick={() => navigate('/profile')} title="Profile">
-            <User size={18} />
-          </button>
           <button className="icon-btn" onClick={handleLogout} title="Logout">
             <LogOut size={18} />
           </button>
@@ -88,12 +86,6 @@ export default function AdminLayout() {
           </nav>
 
           <div className="sidebar-footer">
-            <button className="sidebar-btn" onClick={() => navigate('/profile')}>
-              <User size={17} /> <span className="sidebar-label">My Profile</span>
-            </button>
-            <button className="sidebar-btn" onClick={handleLogout}>
-              <LogOut size={17} /> <span className="sidebar-label">Logout</span>
-            </button>
           </div>
         </aside>
 

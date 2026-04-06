@@ -1,7 +1,18 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { register, login, getMe, verifyIBP, verifyClientID } from '../controllers/authController'
+import {
+  register,
+  login,
+  getMe,
+  verifyIBP,
+  verifyClientID,
+  refreshToken,
+  logoutUser,
+  verify2FA,
+} from '../controllers/authController'
 import { verifyToken } from '../middleware/auth'
+import { validate } from '../middleware/validate'
+import { loginSchema, registerSchema } from '../validators/authSchemas'
 
 const router = Router()
 
@@ -16,10 +27,13 @@ const imageUpload = multer({
 })
 
 // Public
-router.post('/register', register)
-router.post('/login', login)
+router.post('/register', validate(registerSchema), register)
+router.post('/login', validate(loginSchema), login)
 router.post('/verify-ibp', imageUpload.single('ibp_card'), verifyIBP)
 router.post('/verify-client-id', imageUpload.single('id_image'), verifyClientID)
+router.post('/refresh', refreshToken)
+router.post('/logout', logoutUser)
+router.post('/verify-2fa', verify2FA)
 
 // Protected
 router.get('/me', verifyToken, getMe)

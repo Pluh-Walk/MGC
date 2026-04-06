@@ -4,6 +4,13 @@ import bcrypt from 'bcryptjs'
 import pool from '../config/db'
 import { audit } from '../utils/audit'
 import { notify } from '../utils/notify'
+import { notifyWithEmail } from '../utils/emailNotify'
+import {
+  accountSuspendedEmail,
+  accountReactivatedEmail,
+  verificationApprovedEmail,
+  verificationRejectedEmail,
+} from '../templates/emailTemplates'
 
 // ─── List Users (with filters) ──────────────────────────────
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
@@ -223,7 +230,7 @@ export const suspendUser = async (req: Request, res: Response): Promise<void> =>
     }
 
     const [[target]] = await pool.query<RowDataPacket[]>(
-      'SELECT id, status, email FROM users WHERE id = ?', [id]
+      'SELECT id, status, fullname, email FROM users WHERE id = ?', [id]
     )
     if (!target) { res.status(404).json({ success: false, message: 'User not found.' }); return }
     if (target.status === 'suspended') {
@@ -238,6 +245,16 @@ export const suspendUser = async (req: Request, res: Response): Promise<void> =>
     )
 
     await audit(req, 'ADMIN_SUSPEND_USER', 'user', Number(id), reason.trim())
+
+    // Notify and email the suspended user
+    await notifyWithEmail(
+      Number(id), 'account_suspended',
+      `Your account has been suspended. Reason: ${reason.trim()}`,
+      undefined,
+      'Your MGC Law Account Has Been Suspended',
+      (name) => accountSuspendedEmail(name, reason.trim())
+    )
+
     res.json({ success: true, message: 'User suspended.' })
   } catch (err: any) {
     console.error('[admin]', err)
@@ -270,6 +287,17 @@ export const reactivateUser = async (req: Request, res: Response): Promise<void>
     )
 
     await audit(req, 'ADMIN_REACTIVATE_USER', 'user', Number(id))
+
+    // Notify and email the reactivated user
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    await notifyWithEmail(
+      Number(id), 'account_reactivated',
+      'Your account has been reactivated. You can now log in again.',
+      undefined,
+      'Your MGC Law Account Has Been Reactivated',
+      (name) => accountReactivatedEmail(name, `${_origin}/login`)
+    )
+
     res.json({ success: true, message: 'User reactivated.' })
   } catch (err: any) {
     console.error('[admin]', err)
@@ -379,25 +407,71 @@ export const handleVerification = async (req: Request, res: Response): Promise<v
     }
 
     const [[target]] = await pool.query<RowDataPacket[]>(
-      'SELECT id, email, role FROM users WHERE id = ?', [id]
+      'SELECT id, email, role, fullname FROM users WHERE id = ?', [id]
     )
     if (!target) { res.status(404).json({ success: false, message: 'User not found.' }); return }
 
     // Use the correct verification column based on role
     const verifyColumn = target.role === 'client' ? 'id_verified' : 'ibp_verified'
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    const _dash   = target.role === 'client' ? `${_origin}/dashboard/client` : `${_origin}/dashboard/attorney`
 
     if (action === 'approve') {
       await pool.query(`UPDATE users SET ${verifyColumn} = 1 WHERE id = ?`, [id])
-      await notify(Number(id), 'case_update', 'Your identity verification has been approved. You now have full access.')
+      await notifyWithEmail(
+        Number(id), 'case_update',
+        'Your identity verification has been approved. You now have full access.',
+        undefined,
+        'Verification Approved — MGC Law System',
+        (name) => verificationApprovedEmail(name, _dash)
+      )
     } else {
       await pool.query(`UPDATE users SET ${verifyColumn} = 0 WHERE id = ?`, [id])
-      await notify(Number(id), 'case_update', `Your identity verification was rejected. Reason: ${reason || 'Not specified'}`)
+      await notifyWithEmail(
+        Number(id), 'case_update',
+        `Your identity verification was rejected. Reason: ${reason || 'Not specified'}`,
+        undefined,
+        'Verification Not Approved — MGC Law System',
+        (name) => verificationRejectedEmail(name, reason || 'Not specified', _dash)
+      )
     }
 
     await audit(req, `ADMIN_VERIFY_${action.toUpperCase()}`, 'user', Number(id), reason || undefined)
     res.json({ success: true, message: `Verification ${action}d.` })
   } catch (err: any) {
     console.error('[admin]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── Admin: Reset 2FA for a user ────────────────────────────
+export const resetUser2FA = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const [[target]] = await pool.query<RowDataPacket[]>(
+      'SELECT id, totp_enabled FROM users WHERE id = ?', [id]
+    )
+    if (!target) {
+      res.status(404).json({ success: false, message: 'User not found.' })
+      return
+    }
+    if (!target.totp_enabled) {
+      res.status(400).json({ success: false, message: '2FA is not enabled for this user.' })
+      return
+    }
+
+    await pool.query(
+      'UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?', [id]
+    )
+    await pool.query('DELETE FROM two_factor_backup_codes WHERE user_id = ?', [id])
+    await pool.query('DELETE FROM totp_pending WHERE user_id = ?', [id])
+
+    await audit(req, 'ADMIN_2FA_RESET', 'user', Number(id), `2FA reset by admin ${req.user!.id}`)
+
+    res.json({ success: true, message: '2FA has been reset for this user.' })
+  } catch (err: any) {
+    console.error('[resetUser2FA]', err)
     res.status(500).json({ success: false, message: 'Server error.' })
   }
 }

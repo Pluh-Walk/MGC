@@ -7,13 +7,15 @@ import { useNavigate } from 'react-router-dom'
 import {
   Scale, FileText, Users, Calendar, MessageSquare, Briefcase, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
-  Trash2, Clock, MapPin, ChevronRight, AlertTriangle, CalendarClock,
+  Trash2, Clock, MapPin, ChevronRight, AlertTriangle, CalendarClock, Check, CheckCheck,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import UserAvatar from '../components/UserAvatar'
+import GlobalSearch from '../components/GlobalSearch'
 import { hearingsApi, announcementsApi, messagesApi, casesApi, deadlinesApi } from '../services/api'
+import { io as socketIO, Socket } from 'socket.io-client'
 
 const locales = { 'en-US': enUS }
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales })
@@ -83,10 +85,15 @@ export default function AttorneyDashboard() {
   const [menuId, setMenuId] = useState<number | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [partnerTyping, setPartnerTyping] = useState(false)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const socketRef = useRef<Socket | null>(null)
+  const activeIdRef = useRef<number | null>(null)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const userIdRef = useRef<number | undefined>(undefined)
 
   // ── Load hearings ────────────────────────────────────
   const loadHearings = useCallback(async () => {
@@ -122,6 +129,49 @@ export default function AttorneyDashboard() {
   useEffect(() => { loadConversations() }, [loadConversations])
   useEffect(() => { messagesApi.contacts().then(r => setContacts(r.data.data)) }, [])
 
+  // ── Keep refs in sync ────────────────────────────────
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+  useEffect(() => { userIdRef.current = user?.id }, [user])
+
+  // ── Socket.io connection ─────────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const socketUrl = import.meta.env.DEV ? 'http://localhost:5000' : window.location.origin
+    const socket = socketIO(socketUrl, { auth: { token }, path: '/socket.io' })
+    socketRef.current = socket
+    socket.on('message:new', (msg: any) => {
+      const senderId = msg.sender_id
+      if (activeIdRef.current === senderId) {
+        setThread(prev => [...prev, msg])
+        socket.emit('messages:read', { from: senderId })
+      } else {
+        setConversations(prev => {
+          const exists = prev.some(c => c.partner_id === senderId)
+          if (exists) return prev.map(c => c.partner_id === senderId
+            ? { ...c, unread_count: c.unread_count + 1, last_message: msg.content, last_at: msg.created_at }
+            : c)
+          loadConversations()
+          return prev
+        })
+      }
+    })
+    socket.on('typing:start', (data: { from: number }) => {
+      if (activeIdRef.current === data.from) setPartnerTyping(true)
+    })
+    socket.on('typing:stop', (data: { from: number }) => {
+      if (activeIdRef.current === data.from) setPartnerTyping(false)
+    })
+    socket.on('messages:read', (data: { by: number }) => {
+      if (activeIdRef.current === data.by) {
+        setThread(prev => prev.map(m =>
+          m.sender_id === userIdRef.current ? { ...m, is_read: true } : m
+        ))
+      }
+    })
+    return () => { socket.disconnect() }
+  }, [loadConversations])
+
   // ── Resolve partner name ─────────────────────────────
   useEffect(() => {
     if (activeId && !activeName) {
@@ -138,15 +188,16 @@ export default function AttorneyDashboard() {
     try {
       const r = await messagesApi.thread(pid); setThread(r.data.data)
       setConversations(prev => prev.map(c => c.partner_id === pid ? { ...c, unread_count: 0 } : c))
+      if (socketRef.current) socketRef.current.emit('messages:read', { from: pid })
     } finally { setLoadingThread(false) }
   }, [])
   useEffect(() => {
     if (!activeId) return
     loadThread(activeId)
-    pollRef.current = setInterval(() => loadThread(activeId), 10_000)
+    pollRef.current = setInterval(() => loadThread(activeId), 30_000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [activeId, loadThread])
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread, partnerTyping])
 
   // ── Close context menu on outside click ──────────────
   useEffect(() => {
@@ -184,6 +235,8 @@ export default function AttorneyDashboard() {
     if ((!draft.trim() && !attachment) || !activeId) return
     setSending(true)
     const text = draft.trim(); const file = attachment; setDraft('')
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    if (activeId && socketRef.current) socketRef.current.emit('typing:stop', { to: activeId })
     if (attachPreview) URL.revokeObjectURL(attachPreview)
     setAttachment(null); setAttachPreview(null)
     try {
@@ -257,6 +310,7 @@ export default function AttorneyDashboard() {
         </div>
         <div className="dash-nav-right">
           <span className="role-badge attorney">Attorney</span>
+          <GlobalSearch />
           <NotificationBell />
           <SettingsDropdown />
         </div>
@@ -539,6 +593,13 @@ export default function AttorneyDashboard() {
                               {hasText && <p>{m.content}</p>}
                               <div className="bubble-meta">
                                 {m.edited_at && <span className="msg-edited">edited</span>}
+                                {mine && (
+                                  <span className="msg-status" title={m.is_read ? 'Seen' : 'Sent'}>
+                                    {m.is_read
+                                      ? <CheckCheck size={12} style={{ color: '#3b82f6', verticalAlign: 'middle' }} />
+                                      : <Check size={12} style={{ color: 'rgba(15,23,42,0.6)', verticalAlign: 'middle' }} />}
+                                  </span>
+                                )}
                                 <span className="bubble-time">{new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
                             </>
@@ -558,6 +619,12 @@ export default function AttorneyDashboard() {
                     )
                   })}
                   <div ref={bottomRef} />
+                  {partnerTyping && (
+                    <div className="typing-indicator">
+                      <span className="typing-bubble" /><span className="typing-bubble" /><span className="typing-bubble" />
+                      <span style={{ marginLeft: 6, color: '#64748b', fontSize: '0.78rem' }}>{activeName} is typing…</span>
+                    </div>
+                  )}
                 </div>
                 <div className="chat-compose-wrap">
                   {attachment && (
@@ -571,7 +638,20 @@ export default function AttorneyDashboard() {
                     <button className="btn-attach" title="Attach" onClick={() => fileRef.current?.click()} type="button">
                       {attachment?.type.startsWith('image/') ? <Image size={15} /> : <Paperclip size={15} />}
                     </button>
-                    <textarea rows={1} placeholder="Type a message…" value={draft} onChange={e => setDraft(e.target.value)}
+                    <textarea rows={1} placeholder="Type a message…" value={draft}
+                      onChange={e => {
+                        setDraft(e.target.value)
+                        if (activeId && socketRef.current) {
+                          if (e.target.value) {
+                            socketRef.current.emit('typing:start', { to: activeId })
+                            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                            typingTimeoutRef.current = setTimeout(() => { socketRef.current?.emit('typing:stop', { to: activeId }) }, 1500)
+                          } else {
+                            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+                            socketRef.current.emit('typing:stop', { to: activeId })
+                          }
+                        }
+                      }}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} />
                     <button className="btn-send" onClick={handleSend} disabled={(!draft.trim() && !attachment) || sending}>
                       {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}

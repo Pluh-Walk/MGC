@@ -31,11 +31,15 @@ import AdminAuditLogs from './pages/AdminAuditLogs'
 import AdminSettings from './pages/AdminSettings'
 import AdminReports from './pages/AdminReports'
 import AdminAnnouncements from './pages/AdminAnnouncements'
+import MaintenanceBanner from './components/MaintenanceBanner'
+import GlobalSearch from './components/GlobalSearch'
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <MaintenanceBanner />
+        <GlobalSearch globalOnly />
         <Routes>
           {/* Landing */}
           <Route path="/" element={<Landing />} />

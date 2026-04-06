@@ -4,6 +4,9 @@ import pool from '../config/db'
 import path from 'path'
 import fs   from 'fs'
 import { getEffectiveAttorneyId } from '../utils/scope'
+import { notifyWithEmail } from '../utils/emailNotify'
+import { newMessageEmail } from '../templates/emailTemplates'
+import { emitNewMessage } from '../socket'
 
 // â”€â”€â”€ Get Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
@@ -127,7 +130,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     }
 
     const [[receiver]] = await pool.query<RowDataPacket[]>(
-      'SELECT id FROM users WHERE id = ?', [receiver_id]
+      'SELECT id, fullname FROM users WHERE id = ?', [receiver_id]
     )
     if (!receiver) {
       res.status(404).json({ success: false, message: 'Recipient not found.' })
@@ -160,6 +163,38 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     }
 
     const [result] = await pool.query<ResultSetHeader>(sql, params)
+
+    // Notify the recipient in-app and by email
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    let senderDisplayName = user.fullname
+    if (sentOnBehalfOf) {
+      try {
+        const [[attorney]] = await pool.query<RowDataPacket[]>(
+          'SELECT fullname FROM users WHERE id = ?', [sentOnBehalfOf]
+        )
+        if (attorney) senderDisplayName = `${user.fullname} (on behalf of Atty. ${attorney.fullname})`
+      } catch { /* non-fatal */ }
+    }
+    const preview = textContent
+      ? (textContent.length > 120 ? textContent.substring(0, 120) + '...' : textContent)
+      : '📎 Sent an attachment'
+    await notifyWithEmail(
+      Number(receiver_id), 'message_received',
+      `New message from ${senderDisplayName}`,
+      result.insertId,
+      `New Message from ${senderDisplayName}`,
+      (name) => newMessageEmail(name, senderDisplayName, preview, `${_origin}/messages`)
+    )
+
+    // Push real-time event to recipient via Socket.io
+    emitNewMessage(Number(receiver_id), {
+      id: result.insertId,
+      sender_id: user.id,
+      sender_name: senderDisplayName,
+      content: textContent,
+      attachment_name: attachmentName,
+      created_at: new Date().toISOString(),
+    })
 
     res.status(201).json({ success: true, data: { id: result.insertId } })
   } catch (err: any) {

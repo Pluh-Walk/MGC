@@ -1,13 +1,15 @@
 import { Request, Response } from 'express'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
 import { RowDataPacket, ResultSetHeader } from 'mysql2'
 import pool from '../config/db'
 import { sendMail } from '../config/mailer'
 import { audit } from '../utils/audit'
 import { notify } from '../utils/notify'
+import { notifyWithEmail } from '../utils/emailNotify'
 import { secretaryInviteEmail } from '../templates/secretaryInvite'
+import { secretaryJoinedEmail, secretaryRemovedEmail } from '../templates/emailTemplates'
+import { signAccessToken, issueRefreshToken } from '../utils/authTokens'
 
 const sanitize = (str: string) => str.trim().replace(/[<>"']/g, '')
 
@@ -223,12 +225,15 @@ export const registerSecretary = async (req: Request, res: Response): Promise<vo
       [invitation.id]
     )
 
-    // Notify attorney
-    await notify(
+    // Notify attorney (in-app + email)
+    const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+    await notifyWithEmail(
       invitation.attorney_id,
       'case_update',
       `Secretary ${cleanName} has joined and is now linked to your account.`,
-      secretaryId
+      secretaryId,
+      `${cleanName} Has Joined Your Account — MGC Law`,
+      (attyName) => secretaryJoinedEmail(attyName, cleanName, `${_origin}/dashboard/attorney`)
     )
 
     await audit(
@@ -239,13 +244,11 @@ export const registerSecretary = async (req: Request, res: Response): Promise<vo
       `Linked to attorney ID: ${invitation.attorney_id}`
     )
 
-    // Issue JWT so secretary can log in immediately
-    const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as `${number}${'s'|'m'|'h'|'d'|'w'|'y'}`
-    const jwtToken = jwt.sign(
-      { id: secretaryId, fullname: cleanName, username: cleanUsername, role: 'secretary' as const, attorneyId: invitation.attorney_id },
-      process.env.JWT_SECRET as string,
-      { expiresIn }
+    // Issue short-lived access token + refresh cookie so secretary can log in immediately
+    const jwtToken = signAccessToken(
+      { id: secretaryId, fullname: cleanName, username: cleanUsername, role: 'secretary', attorneyId: invitation.attorney_id }
     )
+    await issueRefreshToken(secretaryId, req, res)
 
     res.status(201).json({
       success: true,
@@ -325,6 +328,11 @@ export const removeSecretary = async (req: Request, res: Response): Promise<void
       [attorneyId, id]
     )
 
+    // Fetch secretary details before deactivating (for email)
+    const [[sec]] = await pool.query<RowDataPacket[]>(
+      'SELECT fullname, email FROM users WHERE id = ?', [id]
+    )
+
     // Set user status to inactive
     await pool.query(
       `UPDATE users SET status = 'inactive' WHERE id = ?`,
@@ -332,6 +340,17 @@ export const removeSecretary = async (req: Request, res: Response): Promise<void
     )
 
     await audit(req, 'SECRETARY_REMOVED', 'user', Number(id), `Removed by attorney ID: ${attorneyId}`)
+
+    // Notify and email the removed secretary
+    if (sec) {
+      await notifyWithEmail(
+        Number(id), 'secretary_removed',
+        'Your role as secretary has been removed. Your account is now inactive.',
+        undefined,
+        'Your Secretary Access Has Been Removed — MGC Law',
+        (name) => secretaryRemovedEmail(name)
+      )
+    }
 
     res.json({ success: true, message: 'Secretary removed.' })
   } catch (err) {

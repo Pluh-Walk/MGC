@@ -16,10 +16,18 @@ import {
   getDeadlineSummary,
 } from '../controllers/deadlinesController'
 import { getBillingEntries, addBillingEntry, updateBillingEntry, deleteBillingEntry } from '../controllers/billingController'
+import {
+  createInvoice, listInvoices, getInvoice, downloadInvoicePdf, sendInvoice, markInvoicePaid, voidInvoice,
+} from '../controllers/invoiceController'
 import { getRelations, addRelation, deleteRelation } from '../controllers/relationsController'
 import { getCoCounsel, addCoCounsel, removeCoCounsel } from '../controllers/cocounselController'
 import { listTags, createTag, deleteTag, getCaseTags, assignTag, removeTag } from '../controllers/tagsController'
 import { exportCases, exportCaseDetail } from '../controllers/exportController'
+import { runConflictCheck, acknowledgeConflict } from '../controllers/conflictController'
+import {
+  listTimeEntries, createTimeEntry, updateTimeEntry,
+  deleteTimeEntry, convertToBilling, getTimeSummary,
+} from '../controllers/timeTrackingController'
 import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
 const router = Router()
@@ -29,6 +37,9 @@ router.use(authMiddleware)
 
 // Client list (attorneys + secretary — secretary sees only linked attorney's clients)
 router.get('/clients', requireRole('attorney', 'secretary'), getClientList)
+
+// Conflict of interest check (before case creation)
+router.get('/conflict-check', requireRole('attorney', 'secretary', 'admin'), runConflictCheck)
 
 // Tags (global — not case-scoped)
 router.get('/tags',          requireRole('attorney', 'secretary', 'admin'), listTags)
@@ -89,5 +100,25 @@ router.delete('/:caseId/cocounsel/:entryId', requireRole('attorney', 'admin'), r
 router.get('/:caseId/tags', requireRole('attorney', 'client', 'secretary', 'admin'), getCaseTags)
 router.post('/:caseId/tags', requireRole('attorney', 'secretary'), requireAttorneyScope, assignTag)
 router.delete('/:caseId/tags/:tagId', requireRole('attorney', 'secretary'), requireAttorneyScope, removeTag)
+
+// ─── Invoices ─────────────────────────────────────────────────
+router.post('/:caseId/invoices',                     requireRole('attorney', 'secretary'),                     requireAttorneyScope, createInvoice)
+router.get('/:caseId/invoices',                      requireRole('attorney', 'client', 'secretary', 'admin'),                       listInvoices)
+router.get('/:caseId/invoices/:invoiceId',           requireRole('attorney', 'client', 'secretary', 'admin'),                       getInvoice)
+router.get('/:caseId/invoices/:invoiceId/pdf',       requireRole('attorney', 'client', 'secretary', 'admin'),                       downloadInvoicePdf)
+router.post('/:caseId/invoices/:invoiceId/send',     requireRole('attorney', 'secretary'),                     requireAttorneyScope, sendInvoice)
+router.post('/:caseId/invoices/:invoiceId/pay',      requireRole('attorney', 'secretary'),                     requireAttorneyScope, markInvoicePaid)
+router.put('/:caseId/invoices/:invoiceId/void',      requireRole('attorney', 'admin'),                                              voidInvoice)
+
+// ─── Conflict of Interest Acknowledgment ──────────────────────
+router.post('/:caseId/conflict-check/acknowledge', requireRole('attorney', 'admin'), acknowledgeConflict)
+
+// ─── Time Tracking ────────────────────────────────────────────
+router.get('/:caseId/time/summary',            requireRole('attorney', 'secretary', 'admin'), getTimeSummary)
+router.get('/:caseId/time',                    requireRole('attorney', 'secretary', 'admin'), listTimeEntries)
+router.post('/:caseId/time',                   requireRole('attorney', 'secretary'),          requireAttorneyScope, createTimeEntry)
+router.patch('/:caseId/time/:entryId',         requireRole('attorney', 'secretary'),          requireAttorneyScope, updateTimeEntry)
+router.delete('/:caseId/time/:entryId',        requireRole('attorney', 'admin'),                                    deleteTimeEntry)
+router.post('/:caseId/time/:entryId/bill',     requireRole('attorney', 'secretary'),          requireAttorneyScope, convertToBilling)
 
 export default router

@@ -4,8 +4,11 @@ import pool from '../config/db'
 import path from 'path'
 import fs from 'fs'
 import { notify } from '../utils/notify'
+import { notifyWithEmail } from '../utils/emailNotify'
 import { audit } from '../utils/audit'
 import { getEffectiveAttorneyId } from '../utils/scope'
+import { documentUploadedEmail } from '../templates/emailTemplates'
+import { verifyMagicBytes } from '../config/upload'
 
 // ─── Upload Document ────────────────────────────────────────
 export const uploadDocument = async (req: Request, res: Response): Promise<void> => {
@@ -16,6 +19,14 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
 
     if (!req.file) {
       res.status(400).json({ success: false, message: 'No file uploaded.' })
+      return
+    }
+
+    // ── Magic-byte verification: reject files whose bytes don't match their extension
+    const mimeOk = await verifyMagicBytes(req.file.path, req.file.mimetype)
+    if (!mimeOk) {
+      fs.unlinkSync(req.file.path)
+      res.status(400).json({ success: false, message: 'File content does not match the declared file type. Upload rejected.' })
       return
     }
 
@@ -57,11 +68,13 @@ export const uploadDocument = async (req: Request, res: Response): Promise<void>
 
     // Notify client if visible
     if (is_client_visible === 'true' || is_client_visible === true) {
-      await notify(
-        caseRows[0].client_id,
-        'document_uploaded',
+      const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+      await notifyWithEmail(
+        caseRows[0].client_id, 'document_uploaded',
         `A new document is available: ${req.file.originalname}`,
-        Number(caseId)
+        Number(caseId),
+        `New Document: ${req.file.originalname}`,
+        (name) => documentUploadedEmail(name, caseRows[0].title, caseRows[0].case_number, req.file!.originalname, `${_origin}/cases/${caseId}`)
       )
     }
 
