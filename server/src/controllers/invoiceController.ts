@@ -19,6 +19,7 @@ import pool from '../config/db'
 import { audit } from '../utils/audit'
 import { getEffectiveAttorneyId } from '../utils/scope'
 import { notify } from '../utils/notify'
+import { sendMail } from '../config/mailer'
 import logger from '../config/logger'
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -356,6 +357,77 @@ export const sendInvoice = async (req: Request, res: Response): Promise<void> =>
   res.json({ success: true, message: 'Invoice marked as sent and client notified.' })
 }
 
+// ── Build payment receipt PDF ──────────────────────────────────────
+async function buildReceiptPdf(data: {
+  invoiceNumber: string
+  receiptNumber: string
+  caseNumber: string
+  clientName: string
+  attorneyName: string
+  firmName: string
+  amount: number
+  reference: string | null
+  paidAt: string
+}): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc    = new PDFDocument({ size: 'A4', margin: 50 })
+    const chunks: Buffer[] = []
+    doc.on('data', (c: Buffer) => chunks.push(c))
+    doc.on('end',  () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+
+    const W       = 495
+    const PRIMARY = '#1a56db'
+    const LIGHT   = '#e2e8f0'
+
+    // Header band
+    doc.rect(50, 45, W, 55).fill(PRIMARY)
+    doc.fillColor('#fff').fontSize(18).font('Helvetica-Bold').text('OFFICIAL RECEIPT', 60, 58, { width: W - 20 })
+    doc.fillColor('#cbd5e0').fontSize(9).font('Helvetica').text(data.firmName, 60, 80)
+
+    // Receipt meta
+    doc.fillColor('#1a202c').fontSize(9).font('Helvetica-Bold').text('Receipt #:', 50, 120)
+    doc.font('Helvetica').text(data.receiptNumber, 140, 120)
+    doc.font('Helvetica-Bold').text('Invoice #:', 50, 135)
+    doc.font('Helvetica').text(data.invoiceNumber, 140, 135)
+    doc.font('Helvetica-Bold').text('Date Paid:', 50, 150)
+    doc.font('Helvetica').text(data.paidAt, 140, 150)
+    doc.font('Helvetica-Bold').text('Case #:', 50, 165)
+    doc.font('Helvetica').text(data.caseNumber, 140, 165)
+
+    doc.rect(50, 185, W, 1).fill(LIGHT)
+
+    // Client/attorney
+    doc.fillColor('#2d3748').fontSize(10).font('Helvetica-Bold').text('Received from:', 50, 200)
+    doc.fillColor('#1a202c').fontSize(10).font('Helvetica').text(data.clientName, 50, 215)
+    doc.fillColor('#2d3748').fontSize(10).font('Helvetica-Bold').text('Attorney:', 300, 200)
+    doc.fillColor('#1a202c').font('Helvetica').text(data.attorneyName, 300, 215)
+
+    doc.rect(50, 240, W, 1).fill(LIGHT)
+
+    // Amount highlight
+    doc.rect(50, 255, W, 60).fill('#f0fff4')
+    doc.fillColor('#276749').fontSize(12).font('Helvetica-Bold').text('AMOUNT RECEIVED', 70, 265)
+    doc.fontSize(20).text(
+      `₱ ${Number(data.amount).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      70, 282
+    )
+
+    // Reference
+    if (data.reference) {
+      doc.fillColor('#2d3748').fontSize(9).font('Helvetica-Bold').text('Payment Reference:', 50, 330)
+      doc.font('Helvetica').fillColor('#1a202c').text(data.reference, 170, 330)
+    }
+
+    doc.rect(50, 360, W, 1).fill(LIGHT)
+    doc.fillColor('#718096').fontSize(8).font('Helvetica')
+       .text('This receipt serves as official proof of payment. Thank you for your prompt settlement.',
+             50, 372, { align: 'center', width: W })
+
+    doc.end()
+  })
+}
+
 // POST /api/cases/:caseId/invoices/:invoiceId/pay
 export const markInvoicePaid = async (req: Request, res: Response): Promise<void> => {
   const user = (req as any).user
@@ -388,6 +460,58 @@ export const markInvoicePaid = async (req: Request, res: Response): Promise<void
     )
   }
 
+  // ── Generate & email payment receipt ──────────────────────────
+  try {
+    const [[client]]  = await pool.query<RowDataPacket[]>('SELECT fullname, email FROM users WHERE id = ?', [c.client_id])
+    const [[attorney]] = await pool.query<RowDataPacket[]>('SELECT fullname FROM users WHERE id = ?', [c.attorney_id])
+    const [[firmSetting]] = await pool.query<RowDataPacket[]>(
+      `SELECT setting_value FROM system_settings WHERE setting_key = 'firm_name' LIMIT 1`
+    ).catch(() => [[{ setting_value: 'MGC Law Office' }]] as any)
+
+    const receiptNumber = `RCP-${Date.now().toString().slice(-8)}`
+    const paidAt = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    const receiptBuf = await buildReceiptPdf({
+      invoiceNumber: inv.invoice_number,
+      receiptNumber,
+      caseNumber:    c.case_number,
+      clientName:    client?.fullname ?? 'Client',
+      attorneyName:  attorney?.fullname ?? '',
+      firmName:      firmSetting?.setting_value ?? 'MGC Law Office',
+      amount:        inv.total_amount,
+      reference:     reference || null,
+      paidAt,
+    })
+
+    // Save receipt to invoices/receipts/ upload folder
+    const receiptDir = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads', 'invoices', 'receipts')
+    fs.mkdirSync(receiptDir, { recursive: true })
+    const receiptPath = path.join(receiptDir, `receipt_${invoiceId}_${Date.now()}.pdf`)
+    fs.writeFileSync(receiptPath, receiptBuf)
+
+    // Store receipt path so it can be downloaded later
+    await pool.query(
+      `UPDATE invoices SET receipt_path = ? WHERE id = ?`,
+      [receiptPath, invoiceId]
+    ).catch(() => {}) // column may not exist in older DBs
+
+    // Email receipt to client
+    if (client?.email) {
+      const html = `<div style="font-family:sans-serif;max-width:580px;margin:0 auto">
+        <h2 style="color:#1a56db">Payment Receipt</h2>
+        <p>Dear ${client.fullname},</p>
+        <p>Your payment of <strong>₱${Number(inv.total_amount).toFixed(2)}</strong> for Invoice <strong>${inv.invoice_number}</strong> has been received.</p>
+        ${reference ? `<p>Reference: <strong>${reference}</strong></p>` : ''}
+        <p>Please find your official receipt attached.</p>
+        <p style="color:#718096;font-size:13px">This is an automated message from ${firmSetting?.setting_value ?? 'MGC Law System'}.</p>
+        </div>`
+
+      sendMail(client.email, `Payment Receipt — Invoice ${inv.invoice_number}`, html).catch(() => {})
+    }
+  } catch (err) {
+    logger.warn('Receipt generation failed:', err)
+  }
+
   await notify(c.client_id, 'payment_received',
     `Payment received for invoice ${inv.invoice_number}. Thank you.`,
     caseId)
@@ -395,6 +519,62 @@ export const markInvoicePaid = async (req: Request, res: Response): Promise<void
   await audit(req, 'PAY', 'invoice', invoiceId,
     `Invoice ${inv.invoice_number} marked paid. Ref: ${reference || 'none'}`)
   res.json({ success: true, message: 'Invoice marked as paid.' })
+}
+
+// GET /api/cases/:caseId/invoices/:invoiceId/receipt
+export const downloadReceipt = async (req: Request, res: Response): Promise<void> => {
+  const user = (req as any).user
+  const caseId = Number(req.params.caseId)
+  const invoiceId = Number(req.params.invoiceId)
+
+  const c = await getCase(caseId, user)
+  if (!c || !canAccess(c, user)) { res.status(403).json({ success: false, message: 'Access denied.' }); return }
+
+  const [[inv]] = await pool.query<RowDataPacket[]>(
+    'SELECT * FROM invoices WHERE id = ? AND case_id = ?', [invoiceId, caseId]
+  )
+  if (!inv) { res.status(404).json({ success: false, message: 'Invoice not found.' }); return }
+  if (inv.status !== 'paid') { res.status(400).json({ success: false, message: 'Invoice is not paid yet.' }); return }
+
+  // Try saved receipt file first
+  if (inv.receipt_path && fs.existsSync(inv.receipt_path)) {
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="receipt_${inv.invoice_number}.pdf"`)
+    fs.createReadStream(inv.receipt_path).pipe(res)
+    return
+  }
+
+  // Regenerate on the fly
+  try {
+    const [[client]]  = await pool.query<RowDataPacket[]>('SELECT fullname, email FROM users WHERE id = ?', [c.client_id])
+    const [[attorney]] = await pool.query<RowDataPacket[]>('SELECT fullname FROM users WHERE id = ?', [c.attorney_id])
+    const [[firmSetting]] = await pool.query<RowDataPacket[]>(
+      `SELECT setting_value FROM system_settings WHERE setting_key = 'firm_name' LIMIT 1`
+    ).catch(() => [[{ setting_value: 'MGC Law Office' }]] as any)
+
+    const paidAt = inv.paid_at
+      ? new Date(inv.paid_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+      : new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+
+    const buf = await buildReceiptPdf({
+      invoiceNumber: inv.invoice_number,
+      receiptNumber: `RCP-${String(invoiceId).padStart(8,'0')}`,
+      caseNumber:    c.case_number,
+      clientName:    client?.fullname ?? 'Client',
+      attorneyName:  attorney?.fullname ?? '',
+      firmName:      firmSetting?.setting_value ?? 'MGC Law Office',
+      amount:        inv.total_amount,
+      reference:     inv.paid_reference || null,
+      paidAt,
+    })
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="receipt_${inv.invoice_number}.pdf"`)
+    res.setHeader('Content-Length', buf.length)
+    res.end(buf)
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
 }
 
 // PUT /api/cases/:caseId/invoices/:invoiceId/void

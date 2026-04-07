@@ -6,10 +6,21 @@ const api = axios.create({
   withCredentials: true, // send httpOnly refresh token cookie on every request
 })
 
-// Attach JWT access token to every request
+// Read a cookie by name (works without cookie libraries)
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+// Attach JWT access token + CSRF token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+
+  // Double-submit CSRF cookie pattern — token set by server on login/refresh
+  const csrf = getCookie('XSRF-TOKEN')
+  if (csrf) config.headers['X-CSRF-Token'] = csrf
+
   return config
 })
 
@@ -108,6 +119,8 @@ export const casesApi = {
   exportCase: (id: number) => {
     window.open(`/api/cases/${id}/export?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`, '_blank')
   },
+  placeLegalHold: (id: number, note?: string) => api.post(`/cases/${id}/legal-hold`, { note }),
+  liftLegalHold:  (id: number) => api.delete(`/cases/${id}/legal-hold`),
 }
 
 // ─── Case Parties ─────────────────────────────────────────
@@ -135,12 +148,19 @@ export const deadlinesApi = {
 
 // ─── Case Billing ─────────────────────────────────────────
 export const billingApi = {
-  list:   (caseId: number) => api.get(`/cases/${caseId}/billing`),
-  add:    (caseId: number, data: object) => api.post(`/cases/${caseId}/billing`, data),
-  update: (caseId: number, entryId: number, data: object) =>
+  list:              (caseId: number) => api.get(`/cases/${caseId}/billing`),
+  add:               (caseId: number, data: object) => api.post(`/cases/${caseId}/billing`, data),
+  update:            (caseId: number, entryId: number, data: object) =>
     api.patch(`/cases/${caseId}/billing/${entryId}`, data),
-  delete: (caseId: number, entryId: number) =>
+  delete:            (caseId: number, entryId: number) =>
     api.delete(`/cases/${caseId}/billing/${entryId}`),
+  retainerSummary:   (caseId: number) => api.get(`/cases/${caseId}/billing/retainer`),
+  retainerStatement: (caseId: number) =>
+    api.get(`/cases/${caseId}/billing/retainer/statement`, { responseType: 'blob' }),
+  uploadReceipt:     (caseId: number, entryId: number, file: File) => {
+    const form = new FormData(); form.append('receipt', file)
+    return api.put(`/cases/${caseId}/billing/${entryId}/receipt`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
 }
 
 // ─── Invoices ─────────────────────────────────────────────
@@ -152,6 +172,8 @@ export const invoiceApi = {
   pdfUrl:  (caseId: number, invoiceId: number) => `/api/cases/${caseId}/invoices/${invoiceId}/pdf`,
   downloadPdf: (caseId: number, invoiceId: number) =>
     api.get(`/cases/${caseId}/invoices/${invoiceId}/pdf`, { responseType: 'blob' }),
+  receiptUrl: (caseId: number, invoiceId: number) =>
+    `/api/cases/${caseId}/invoices/${invoiceId}/receipt?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`,
   send:    (caseId: number, invoiceId: number) => api.post(`/cases/${caseId}/invoices/${invoiceId}/send`),
   pay:     (caseId: number, invoiceId: number, data: { paid_reference?: string }) =>
     api.post(`/cases/${caseId}/invoices/${invoiceId}/pay`, data),
@@ -204,6 +226,24 @@ export const tagsApi = {
   remove:        (caseId: number, tagId: number) => api.delete(`/cases/${caseId}/tags/${tagId}`),
 }
 
+// ─── Tasks ────────────────────────────────────────────────
+export const tasksApi = {
+  list:     (caseId: number) => api.get(`/cases/${caseId}/tasks`),
+  create:   (caseId: number, data: object) => api.post(`/cases/${caseId}/tasks`, data),
+  update:   (caseId: number, taskId: number, data: object) => api.put(`/cases/${caseId}/tasks/${taskId}`, data),
+  complete: (caseId: number, taskId: number) => api.post(`/cases/${caseId}/tasks/${taskId}/complete`, {}),
+  delete:   (caseId: number, taskId: number) => api.delete(`/cases/${caseId}/tasks/${taskId}`),
+  mine:     () => api.get('/cases/tasks/mine'),
+}
+
+export const stagesApi = {
+  templates: () => api.get('/cases/stages/templates'),
+  list:      (caseId: number) => api.get(`/cases/${caseId}/stages`),
+  init:      (caseId: number, case_type: string) => api.post(`/cases/${caseId}/stages/init`, { case_type }),
+  advance:   (caseId: number, stageId: number, notes?: string) => api.put(`/cases/${caseId}/stages/${stageId}/advance`, { notes }),
+  update:    (caseId: number, stageId: number, data: object) => api.put(`/cases/${caseId}/stages/${stageId}`, data),
+}
+
 // ─── Profile ──────────────────────────────────────────────
 export const profileApi = {
   me: () => api.get('/profile/me'),
@@ -215,8 +255,9 @@ export const profileApi = {
   getAttorneyPublicStats: (id: number) => api.get(`/profile/attorneys/${id}/stats`),
   listAttorneys: () => api.get('/profile/attorneys'),
   // Attorney-specific
-  stats:      () => api.get('/profile/attorney/stats'),
-  activity:   () => api.get('/profile/attorney/activity'),
+  stats:          () => api.get('/profile/attorney/stats'),
+  activity:       () => api.get('/profile/attorney/activity'),
+  getPerformance: () => api.get('/profile/attorney/performance'),
   // Client-specific
   clientStats:     () => api.get('/profile/client/stats'),
   clientActivity:  () => api.get('/profile/client/activity'),
@@ -235,6 +276,8 @@ export const profileApi = {
     return api.post('/profile/photo', fd, { headers: { 'Content-Type': undefined } })
   },
   photoUrl: (userId: number) => `/api/profile/photo/${userId}`,
+  getNotificationPrefs: () => api.get('/profile/notification-prefs'),
+  updateNotificationPrefs: (data: Record<string, string>) => api.put('/profile/notification-prefs', data),
 }
 
 // ─── Reviews ───────────────────────────────────
@@ -248,7 +291,8 @@ export const reviewsApi = {
 
 // ─── Documents ────────────────────────────────────────────
 export const documentsApi = {
-  list: (caseId: number) => api.get(`/cases/${caseId}/documents`),
+  list: (caseId: number, search?: string) =>
+    api.get(`/cases/${caseId}/documents`, { params: search ? { search } : undefined }),
   upload: (caseId: number, formData: FormData) =>
     api.post(`/cases/${caseId}/documents`, formData, {
       headers: { 'Content-Type': undefined },
@@ -256,6 +300,12 @@ export const documentsApi = {
   downloadUrl: (id: number) => `/api/documents/${id}/download`,
   download: (id: number) => api.get(`/documents/${id}/download`, { responseType: 'blob' }),
   delete: (id: number) => api.delete(`/documents/${id}`),
+  privilegeLog: (caseId: number) =>
+    api.get(`/cases/${caseId}/documents/privilege-log`, { responseType: 'blob' }),
+  bulkDownload: (caseId: number, ids: number[]) =>
+    api.get(`/cases/${caseId}/documents/bulk-download`, { params: { ids: ids.join(',') }, responseType: 'blob' }),
+  bulkDelete: (caseId: number, ids: number[]) =>
+    api.delete(`/cases/${caseId}/documents/bulk`, { data: { ids } }),
   // ─── Versioning ──────────────────────────────────────────
   listVersions:    (caseId: number, docId: number) =>
     api.get(`/cases/${caseId}/documents/${docId}/versions`),
@@ -272,6 +322,15 @@ export const notificationsApi = {
   list:         () => api.get('/notifications'),
   markAllRead:  () => api.put('/notifications/read-all'),
   markOneRead:  (id: number) => api.put(`/notifications/${id}/read`),
+}
+
+// ─── Document Templates ────────────────────────────────────────
+export const templatesApi = {
+  list:     (category?: string) => api.get('/templates', { params: category ? { category } : {} }),
+  upload:   (formData: FormData) => api.post('/templates', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  update:   (id: number, data: object) => api.put(`/templates/${id}`, data),
+  delete:   (id: number) => api.delete(`/templates/${id}`),
+  downloadUrl: (id: number) => `/api/templates/${id}/download?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`,
 }
 
 // ─── Hearings ──────────────────────────────────────────────────
@@ -375,6 +434,12 @@ export const adminApi = {
   // Reports
   userReport:      () => api.get('/admin/reports/users'),
   caseReport:      () => api.get('/admin/reports/cases'),
+  financialReport: () => api.get('/admin/reports/financial'),
+  workloadReport:  () => api.get('/admin/reports/workload'),
+
+  // Impersonation
+  impersonateUser: (userId: number) => api.post(`/admin/users/${userId}/impersonate`),
+  endImpersonation: (logId: number) => api.post(`/admin/impersonation/${logId}/end`),
 
   // Data Privacy (RA 10173 / DSAR)
   dsarExport: (userId: number) =>

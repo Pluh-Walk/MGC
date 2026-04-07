@@ -11,7 +11,7 @@ import pool from '../config/db'
 import { RowDataPacket } from 'mysql2'
 import { notify } from '../utils/notify'
 import { sendMail } from '../config/mailer'
-import { deadlineReminderEmail } from '../templates/emailTemplates'
+import { deadlineReminderEmail, solReminderEmail } from '../templates/emailTemplates'
 
 const INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
@@ -119,6 +119,56 @@ async function runDeadlineReminders(): Promise<void> {
     }
 
     console.log(`[DeadlineReminder] Sent ${sent} notifications.`)
+
+    // ─── SOL Multi-Tier Reminders ──────────────────────────────────────────
+    // Extra reminder cadence for statute_of_limitations deadlines that are
+    // not yet acknowledged: 90 days, 30 days, 7 days, 1 day before due date.
+    const solTiers: { days: number; label: string }[] = [
+      { days: 90, label: '90 days' },
+      { days: 30, label: '30 days' },
+      { days: 7,  label: '7 days'  },
+      { days: 1,  label: '1 day'   },
+    ]
+
+    let solSent = 0
+    for (const tier of solTiers) {
+      const [solRows] = await pool.query<RowDataPacket[]>(
+        `SELECT cd.id, cd.case_id, cd.title, cd.due_date,
+                c.case_number, c.title AS case_title, c.attorney_id,
+                u.fullname AS attorney_name, u.email AS attorney_email
+         FROM case_deadlines cd
+         JOIN cases c ON c.id = cd.case_id AND c.deleted_at IS NULL
+         JOIN users u ON u.id = c.attorney_id
+         WHERE cd.deadline_type = 'statute_of_limitations'
+           AND cd.is_completed = 0
+           AND cd.sol_acknowledged_at IS NULL
+           AND cd.due_date = DATE_ADD(CURDATE(), INTERVAL ? DAY)
+         LIMIT 100`,
+        [tier.days]
+      )
+
+      for (const row of solRows as RowDataPacket[]) {
+        const msg = `⚠ SOL WARNING (${tier.label} remaining): "${row.title}" for case ${row.case_number}. Due: ${new Date(row.due_date).toLocaleDateString('en-PH')}.`
+        await notify(row.attorney_id, 'sol_reminder', msg, row.case_id)
+
+        if (process.env.SMTP_USER && row.attorney_email) {
+          const dueFormatted = new Date(row.due_date).toLocaleDateString('en-PH', { dateStyle: 'long' })
+          const link = `${_origin}/cases/${row.case_id}`
+          try {
+            await sendMail(
+              row.attorney_email,
+              `⚠ URGENT: SOL Deadline in ${tier.label} — ${row.case_number}`,
+              solReminderEmail(row.attorney_name, row.title, row.case_title, row.case_number, dueFormatted, tier.days, link)
+            )
+          } catch { /* non-fatal */ }
+        }
+        solSent++
+      }
+    }
+
+    if (solSent > 0) {
+      console.log(`[DeadlineReminder] Sent ${solSent} SOL tier notifications.`)
+    }
   } catch (err) {
     console.error('[DeadlineReminder] Error:', err)
   }

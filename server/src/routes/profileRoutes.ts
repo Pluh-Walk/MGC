@@ -20,6 +20,9 @@ import {
   getAttorneyPublicProfile,
   getAttorneyPublicStats,
   listAttorneys,
+  getAttorneyPerformanceReport,
+  getNotificationPrefs,
+  updateNotificationPrefs,
 } from '../controllers/profileController'
 import { authMiddleware, requireRole, requireAttorneyScope } from '../middleware/auth'
 
@@ -85,8 +88,9 @@ router.put('/password', changePassword)
 router.post('/photo', photoUpload.single('photo'), uploadProfilePhoto)
 
 // Attorney stats & activity (secretary can also view)
-router.get('/attorney/stats',    requireRole('attorney', 'secretary'), getAttorneyStats)
-router.get('/attorney/activity', requireRole('attorney', 'secretary'), getAttorneyActivity)
+router.get('/attorney/stats',       requireRole('attorney', 'secretary'), getAttorneyStats)
+router.get('/attorney/activity',    requireRole('attorney', 'secretary'), getAttorneyActivity)
+router.get('/attorney/performance', requireRole('attorney'), getAttorneyPerformanceReport)
 
 // Client stats, activity, documents
 router.get('/client/stats',     requireRole('client'), getClientStats)
@@ -105,5 +109,9 @@ router.get('/attorneys/:id', requireRole('client'), getAttorneyPublicProfile)
 router.get('/clients/:id',        requireRole('attorney', 'secretary'), getClientProfile)
 router.get('/clients/:id/cases',  requireRole('attorney', 'secretary'), getClientCases)
 router.put('/clients/:id',        requireRole('attorney'), updateClientNotes)
+
+// Notification preferences (all authenticated roles)
+router.get('/notification-prefs',  getNotificationPrefs)
+router.put('/notification-prefs',  updateNotificationPrefs)
 
 export default router

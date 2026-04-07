@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import {
   Users, Search, Plus, AlertCircle, CheckCircle2, X,
   Eye, Ban, RotateCcw, Trash2, ChevronLeft, ChevronRight,
-  Download, ShieldOff,
+  Download, ShieldOff, UserCheck,
 } from 'lucide-react'
 import { adminApi } from '../services/api'
 
@@ -138,6 +138,27 @@ export default function AdminUsers() {
       setSuccess(`${u.fullname} reactivated.`)
       fetchUsers()
     } catch (err: any) { setError(err.response?.data?.message || 'Failed.') }
+  }
+
+  const handleImpersonate = async (u: UserRow) => {
+    if (!confirm(`Impersonate ${u.fullname} (${u.role})? You will be logged in as this user in read-only mode.`)) return
+    try {
+      const res = await adminApi.impersonateUser(u.id)
+      const { token, impersonation_log_id, target } = res.data
+      // Save admin session
+      localStorage.setItem('admin_token', localStorage.getItem('token') || '')
+      localStorage.setItem('admin_user', localStorage.getItem('user') || '')
+      localStorage.setItem('impersonation_log_id', String(impersonation_log_id))
+      localStorage.setItem('impersonation_target_name', target.fullname)
+      // Set impersonation token
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify(target))
+      // Redirect to appropriate dashboard
+      const dash = target.role === 'attorney' ? '/dashboard/attorney'
+        : target.role === 'secretary' ? '/dashboard/secretary'
+        : '/dashboard/client'
+      window.location.href = dash
+    } catch (err: any) { setError(err.response?.data?.message || 'Impersonation failed.') }
   }
 
   const handleDelete = async (u: UserRow) => {
@@ -287,6 +308,11 @@ export default function AdminUsers() {
                         {(u.status === 'suspended' || u.status === 'inactive') && (
                           <button className="action-icon-btn success" title="Reactivate" onClick={() => handleReactivate(u)}>
                             <RotateCcw size={15} />
+                          </button>
+                        )}
+                        {u.status === 'active' && u.role !== 'admin' && (
+                          <button className="action-icon-btn" title="Impersonate User" onClick={() => handleImpersonate(u)}>
+                            <UserCheck size={15} />
                           </button>
                         )}
                         <button className="action-icon-btn danger" title="Erase Personal Data" onClick={() => { setEraseTarget(u); setEraseConfirmText('') }}>

@@ -12,6 +12,7 @@ import {
 } from '../controllers/authController'
 import { verifyToken } from '../middleware/auth'
 import { validate } from '../middleware/validate'
+import { csrfProtect } from '../middleware/csrf'
 import { loginSchema, registerSchema } from '../validators/authSchemas'
 
 const router = Router()
@@ -31,7 +32,7 @@ router.post('/register', validate(registerSchema), register)
 router.post('/login', validate(loginSchema), login)
 router.post('/verify-ibp', imageUpload.single('ibp_card'), verifyIBP)
 router.post('/verify-client-id', imageUpload.single('id_image'), verifyClientID)
-router.post('/refresh', refreshToken)
+router.post('/refresh', csrfProtect, refreshToken)
 router.post('/logout', logoutUser)
 router.post('/verify-2fa', verify2FA)
 

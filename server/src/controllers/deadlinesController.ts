@@ -238,3 +238,58 @@ export const getDeadlineSummary = async (req: Request, res: Response): Promise<v
     res.status(500).json({ success: false, message: err.message })
   }
 }
+
+// ─── POST /api/cases/:caseId/deadlines/:deadlineId/sol-acknowledge ──────────
+export const acknowledgeSolDeadline = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const { caseId, deadlineId } = req.params
+
+    // Verify the case exists and the user has access
+    const [caseRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, attorney_id FROM cases WHERE id = ? AND deleted_at IS NULL`,
+      [caseId]
+    )
+    if (!caseRows.length) {
+      res.status(404).json({ success: false, message: 'Case not found.' })
+      return
+    }
+    const effectiveAttorneyId = getEffectiveAttorneyId(user)
+    if (effectiveAttorneyId !== caseRows[0].attorney_id) {
+      res.status(403).json({ success: false, message: 'Access denied.' })
+      return
+    }
+
+    const [dlRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, deadline_type, sol_acknowledged_at
+       FROM case_deadlines WHERE id = ? AND case_id = ?`,
+      [deadlineId, caseId]
+    )
+    if (!dlRows.length) {
+      res.status(404).json({ success: false, message: 'Deadline not found.' })
+      return
+    }
+    if (dlRows[0].deadline_type !== 'statute_of_limitations') {
+      res.status(400).json({ success: false, message: 'Not a statute of limitations deadline.' })
+      return
+    }
+    if (dlRows[0].sol_acknowledged_at) {
+      res.status(409).json({ success: false, message: 'Already acknowledged.' })
+      return
+    }
+
+    await pool.query(
+      `UPDATE case_deadlines
+       SET sol_acknowledged_at = NOW(), sol_acknowledged_by = ?
+       WHERE id = ?`,
+      [user.id, deadlineId]
+    )
+
+    await audit(req, 'SOL_ACKNOWLEDGED', 'case_deadline', Number(deadlineId),
+      `SOL deadline acknowledged by user ${user.id} on case ${caseId}`)
+
+    res.json({ success: true, message: 'SOL deadline acknowledged.' })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}

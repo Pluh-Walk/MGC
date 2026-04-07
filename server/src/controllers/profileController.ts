@@ -549,3 +549,146 @@ export const getAttorneyPublicStats = async (req: Request, res: Response): Promi
     res.status(500).json({ success: false, message: err.message })
   }
 }
+
+// ─── Attorney Performance Report (§9.1) ──────────────────────
+export const getAttorneyPerformanceReport = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const attorneyId = user.id            // always scoped to self
+
+    // ── 1. Case closure rate — opened vs closed per month (last 12) ──
+    const [casesByMonth] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         DATE_FORMAT(created_at, '%Y-%m') AS month,
+         COUNT(*) AS opened,
+         SUM(CASE WHEN status IN ('closed','archived') THEN 1 ELSE 0 END) AS closed
+       FROM cases
+       WHERE attorney_id = ? AND deleted_at IS NULL
+         AND created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+       GROUP BY month ORDER BY month`,
+      [attorneyId]
+    )
+
+    // ── 2. Average case duration by type (closed cases) ──────────
+    const [avgDuration] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         case_type,
+         ROUND(AVG(DATEDIFF(closed_at, created_at))) AS avg_days,
+         COUNT(*) AS count
+       FROM cases
+       WHERE attorney_id = ? AND status IN ('closed','archived') AND closed_at IS NOT NULL AND deleted_at IS NULL
+       GROUP BY case_type ORDER BY avg_days DESC`,
+      [attorneyId]
+    )
+
+    // ── 3. Billable hours per month (last 12) ────────────────────
+    const [billableHours] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         DATE_FORMAT(te.created_at, '%Y-%m') AS month,
+         ROUND(SUM(te.duration_sec) / 3600, 2) AS hours
+       FROM time_entries te
+       JOIN cases c ON c.id = te.case_id AND c.deleted_at IS NULL
+       WHERE c.attorney_id = ? AND te.is_billable = 1
+         AND te.created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+       GROUP BY month ORDER BY month`,
+      [attorneyId]
+    )
+
+    // ── 4. Revenue collected vs outstanding ──────────────────────
+    const [[revenue]] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN i.status = 'paid'   THEN i.total_amount ELSE 0 END), 0) AS collected,
+         COALESCE(SUM(CASE WHEN i.status IN ('sent','overdue') THEN i.total_amount ELSE 0 END), 0) AS outstanding,
+         COALESCE(SUM(i.total_amount), 0) AS total_billed
+       FROM invoices i
+       JOIN cases c ON c.id = i.case_id AND c.deleted_at IS NULL
+       WHERE c.attorney_id = ?`,
+      [attorneyId]
+    )
+
+    // ── 5. Overdue tasks ─────────────────────────────────────────
+    const [[overdueTasks]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt
+       FROM case_tasks t
+       JOIN cases c ON c.id = t.case_id AND c.deleted_at IS NULL
+       WHERE c.attorney_id = ? AND t.due_date < CURDATE() AND t.status NOT IN ('done','cancelled')`,
+      [attorneyId]
+    )
+
+    // ── 6. SOL approaching within 90 days ────────────────────────
+    const [[solApproaching]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt
+       FROM case_deadlines cd
+       JOIN cases c ON c.id = cd.case_id AND c.deleted_at IS NULL
+       WHERE c.attorney_id = ? AND cd.deadline_type = 'statute_of_limitations'
+         AND cd.is_completed = 0
+         AND cd.due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 90 DAY)`,
+      [attorneyId]
+    )
+
+    res.json({
+      success: true,
+      data: {
+        cases_by_month:    casesByMonth,
+        avg_duration:      avgDuration,
+        billable_hours:    billableHours,
+        revenue,
+        overdue_tasks:     overdueTasks.cnt,
+        sol_approaching:   solApproaching.cnt,
+      },
+    })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+// ─── Notification Preferences (§2.2) ────────────────────────
+const PREF_FIELDS = [
+  'new_message', 'case_update', 'hearing_reminder', 'deadline_reminder',
+  'document_uploaded', 'announcement', 'invoice_sent', 'task_assigned',
+] as const
+type PrefField = typeof PREF_FIELDS[number]
+const PREF_VALUES = ['both', 'app', 'email', 'none'] as const
+
+export const getNotificationPrefs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    await pool.query(
+      `INSERT IGNORE INTO notification_preferences (user_id) VALUES (?)`, [user.id]
+    )
+    const [[prefs]] = await pool.query<RowDataPacket[]>(
+      `SELECT ${PREF_FIELDS.join(', ')} FROM notification_preferences WHERE user_id = ?`,
+      [user.id]
+    )
+    res.json({ success: true, data: prefs })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
+export const updateNotificationPrefs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const updates: Partial<Record<PrefField, string>> = {}
+    for (const field of PREF_FIELDS) {
+      const val = req.body[field]
+      if (val && (PREF_VALUES as readonly string[]).includes(val)) {
+        updates[field] = val
+      }
+    }
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ success: false, message: 'No valid preference fields provided.' })
+      return
+    }
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ')
+    await pool.query(
+      `INSERT INTO notification_preferences (user_id, ${Object.keys(updates).join(', ')})
+       VALUES (?, ${Object.keys(updates).map(() => '?').join(', ')})
+       ON DUPLICATE KEY UPDATE ${setClauses}`,
+      [user.id, ...Object.values(updates), ...Object.values(updates)]
+    )
+    res.json({ success: true, message: 'Notification preferences saved.' })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}

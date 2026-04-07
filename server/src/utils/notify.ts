@@ -15,6 +15,7 @@ export type NotificationType =
   | 'secretary_removed'
   | 'invoice_sent'
   | 'payment_received'
+  | 'sol_reminder'
 
 /**
  * Creates a notification record for a user.

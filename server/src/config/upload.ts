@@ -1,8 +1,10 @@
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
+import { exec } from 'child_process'
 import { Request } from 'express'
 import sanitizeFilename from 'sanitize-filename'
+import logger from './logger'
 
 const MAX_SIZE_BYTES = Number(process.env.MAX_FILE_SIZE_MB || 20) * 1024 * 1024
 
@@ -89,13 +91,47 @@ const fileFilter = (
   if (ALLOWED_TYPES.includes(file.mimetype)) {
     cb(null, true)
   } else {
-    cb(new Error('File type not allowed. Accepted: PDF, images, Word, Excel.'))
+    // Use cb(null, false) so the file is silently rejected and req.file stays
+    // undefined — the controller can then return a clear 400 with the exact message.
+    cb(null, false)
   }
 }
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: MAX_SIZE_BYTES } })
 
 export default upload
+
+/**
+ * Scan an uploaded file with ClamAV (clamscan CLI) if available.
+ * - Resolves cleanly when the file is clean (exit 0).
+ * - Rejects with Error('VIRUS_FOUND') when a virus is detected (exit 1).
+ * - Resolves with a warning log when ClamAV is not installed or unreachable
+ *   (exit 2 / ENOENT) — best-effort, non-blocking.
+ */
+export function scanWithClamav(filePath: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    // Quote the path to handle spaces; --no-summary keeps output clean
+    exec(`clamscan --no-summary "${filePath}"`, (err, stdout, stderr) => {
+      if (!err) {
+        // Exit 0 → file is clean
+        resolve()
+        return
+      }
+      const exitCode = (err as any).code
+      // Exit 1 AND clamscan stdout contains "FOUND" → genuine virus detection.
+      // On Windows, a missing clamscan also produces exit code 1 (cmd.exe "not
+      // recognized"), so we must check the output to distinguish the two cases.
+      if (exitCode === 1 && stdout.includes('FOUND')) {
+        reject(new Error('VIRUS_FOUND'))
+        return
+      }
+      // Anything else: ENOENT (POSIX), Windows "not recognized" (exit 1, no
+      // FOUND in output), exit 2 (scan error) — ClamAV unavailable, skip scan.
+      logger.warn('[ClamAV] Not available or scan error — skipping:', stderr || err.message)
+      resolve()
+    })
+  })
+}
 
 // ─── Message attachments (10 MB, includes gif) ────────────
 const MESSAGE_ALLOWED_TYPES = [
@@ -133,4 +169,35 @@ export const messageUpload = multer({
   storage: messageStorage,
   fileFilter: messageFileFilter,
   limits: { fileSize: 10 * 1024 * 1024 },
+})
+
+// ─── Expense receipts (5 MB, PDF + images only) ───────────
+const RECEIPT_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+
+const receiptStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads', 'receipts')
+    fs.mkdirSync(dir, { recursive: true })
+    cb(null, dir)
+  },
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`
+    const ext    = path.extname(safeFilename(file.originalname))
+    cb(null, `${unique}${ext}`)
+  },
+})
+
+const receiptFileFilter = (
+  _req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  if (RECEIPT_ALLOWED_TYPES.includes(file.mimetype)) cb(null, true)
+  else cb(new Error('Only PDF and images are accepted for receipts.'))
+}
+
+export const receiptUpload = multer({
+  storage: receiptStorage,
+  fileFilter: receiptFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
 })

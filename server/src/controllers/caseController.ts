@@ -570,3 +570,62 @@ export const getClientList = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ success: false, message: err.message })
   }
 }
+
+// ─── POST /api/cases/:id/legal-hold ────────────────────────
+export const placeLegalHold = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const { id } = req.params
+    const { note } = req.body
+
+    const [cases] = await pool.query<RowDataPacket[]>(
+      `SELECT id, attorney_id FROM cases WHERE id = ? AND deleted_at IS NULL`, [id]
+    )
+    if (!cases.length) { res.status(404).json({ success: false, message: 'Case not found.' }); return }
+
+    const eid = getEffectiveAttorneyId(user)
+    if (user.role !== 'admin' && eid !== cases[0].attorney_id) {
+      res.status(403).json({ success: false, message: 'Access denied.' }); return
+    }
+
+    await pool.query(
+      `UPDATE cases SET legal_hold = 1, legal_hold_by = ?, legal_hold_at = NOW(), legal_hold_note = ? WHERE id = ?`,
+      [user.id, note ?? null, id]
+    )
+
+    await audit(req, 'LEGAL_HOLD_PLACED', 'case', parseInt(id), note ?? '')
+    res.json({ success: true, message: 'Legal hold placed.' })
+  } catch (err: any) {
+    console.error('placeLegalHold:', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── DELETE /api/cases/:id/legal-hold ──────────────────────
+export const liftLegalHold = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const { id } = req.params
+
+    const [cases] = await pool.query<RowDataPacket[]>(
+      `SELECT id, attorney_id FROM cases WHERE id = ? AND deleted_at IS NULL`, [id]
+    )
+    if (!cases.length) { res.status(404).json({ success: false, message: 'Case not found.' }); return }
+
+    const eid = getEffectiveAttorneyId(user)
+    if (user.role !== 'admin' && eid !== cases[0].attorney_id) {
+      res.status(403).json({ success: false, message: 'Access denied.' }); return
+    }
+
+    await pool.query(
+      `UPDATE cases SET legal_hold = 0, legal_hold_by = NULL, legal_hold_at = NULL, legal_hold_note = NULL WHERE id = ?`,
+      [id]
+    )
+
+    await audit(req, 'LEGAL_HOLD_LIFTED', 'case', parseInt(id))
+    res.json({ success: true, message: 'Legal hold lifted.' })
+  } catch (err: any) {
+    console.error('liftLegalHold:', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}

@@ -272,6 +272,71 @@ export const secretaryJoinedEmail = (
   <a href="${dashLink}" class="btn btn-blue">Manage Secretaries</a>
 `)
 
+// ─── 14. Hearing 24h reminder ─────────────────────────────────────────────────
+export const hearing24hReminderEmail = (
+  recipientName: string,
+  caseTitle: string,
+  caseNumber: string,
+  hearingTitle: string,
+  scheduledAt: string,
+  location: string | null,
+  link: string
+): string => layout('Hearing Tomorrow', `
+  <h2>Reminder: Hearing scheduled for tomorrow</h2>
+  <p>Hi ${recipientName},</p>
+  <p>This is a reminder that you have a hearing scheduled <strong>tomorrow</strong>. Please ensure all necessary documents and preparations are ready.</p>
+  <div class="info info-warn">
+    <p><strong>Hearing:</strong> ${hearingTitle}</p>
+    <p><strong>Case:</strong> ${caseTitle} (${caseNumber})</p>
+    <p><strong>Date &amp; Time:</strong> ${scheduledAt}</p>
+    ${location ? `<p><strong>Location:</strong> ${location}</p>` : ''}
+  </div>
+  <a href="${link}" class="btn btn-orange">View Hearing Details</a>
+`)
+
+// ─── 15. New login from unrecognized device ───────────────────────────────────
+export const newLoginDeviceEmail = (
+  recipientName: string,
+  ip: string,
+  userAgent: string,
+  timestamp: string,
+  dashLink: string
+): string => layout('New Login Detected', `
+  <h2>New sign-in to your account</h2>
+  <p>Hi ${recipientName},</p>
+  <p>We noticed a new sign-in to your MGC Law account. If this was you, no action is needed.</p>
+  <div class="info info-warn">
+    <p><strong>Time:</strong> ${timestamp}</p>
+    <p><strong>IP Address:</strong> ${ip}</p>
+    <p><strong>Device / Browser:</strong> ${userAgent}</p>
+  </div>
+  <p>If you did <strong>not</strong> sign in, please change your password immediately and contact your administrator.</p>
+  <a href="${dashLink}" class="btn btn-orange">Secure My Account</a>
+`)
+
+// ─── 16. Statute of Limitations critical reminder ─────────────────────────────
+export const solReminderEmail = (
+  recipientName: string,
+  deadlineTitle: string,
+  caseTitle: string,
+  caseNumber: string,
+  dueDate: string,
+  daysLeft: number,
+  link: string
+): string => layout('URGENT: Statute of Limitations Reminder', `
+  <h2>⚠ Statute of Limitations Approaching</h2>
+  <p>Hi ${recipientName},</p>
+  <p>This is a critical reminder regarding a statute of limitations deadline that requires your immediate attention.</p>
+  <div class="info info-err">
+    <p><strong>Deadline:</strong> ${deadlineTitle}</p>
+    <p><strong>Case:</strong> ${caseTitle} (${caseNumber})</p>
+    <p><strong>Due Date:</strong> ${dueDate}</p>
+    <p><strong>Days Remaining:</strong> <span style="color:#c53030;font-weight:bold;">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</span></p>
+  </div>
+  <p><strong>Missing a statute of limitations deadline is an irreversible error.</strong> Please review this case immediately and take necessary action.</p>
+  <a href="${link}" class="btn btn-orange">View Case Now</a>
+`)
+
 export const secretaryRemovedEmail = (
   secretaryName: string
 ): string => layout('Account Access Removed', `

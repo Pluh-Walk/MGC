@@ -8,12 +8,13 @@ import {
   Scale, FileText, Clock, MessageSquare, HelpCircle, FolderOpen, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
   Trash2, MapPin, ChevronRight, Briefcase, Calendar, Users, Check, CheckCheck,
+  AlertCircle, DollarSign, Phone, Mail, Building2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import NotificationBell from '../components/NotificationBell'
 import UserAvatar from '../components/UserAvatar'
-import { hearingsApi, announcementsApi, messagesApi } from '../services/api'
+import { hearingsApi, announcementsApi, messagesApi, profileApi, casesApi, invoiceApi } from '../services/api'
 import { io as socketIO, Socket } from 'socket.io-client'
 
 const locales = { 'en-US': enUS }
@@ -47,6 +48,19 @@ interface Message {
 }
 interface Contact { id: number; fullname: string; username: string; role: string }
 
+interface CaseStats {
+  active_cases: number; completed_cases: number; pending_cases: number;
+  assigned_attorney: { id: number; fullname: string; law_firm: string | null; photo_path: string | null } | null;
+}
+interface OutstandingInvoice {
+  id: number; invoice_number: string; total_amount: number;
+  due_date: string | null; status: string; case_id: number; case_number: string;
+}
+interface AttorneyContact {
+  email: string; phone: string | null; law_firm: string | null;
+  office_address: string | null; fullname: string; availability: string | null;
+}
+
 export default function ClientDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -60,6 +74,12 @@ export default function ClientDashboard() {
   // ── Announcements state ──────────────────────────────
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loadingA, setLoadingA] = useState(true)
+
+  // ── Case stats + attorney contact ────────────────────
+  const [caseStats, setCaseStats] = useState<CaseStats | null>(null)
+  const [attorneyContact, setAttorneyContact] = useState<AttorneyContact | null>(null)
+  const [outstandingInvoices, setOutstandingInvoices] = useState<OutstandingInvoice[]>([])
+  const [loadingStats, setLoadingStats] = useState(true)
 
   // ── Messages state ───────────────────────────────────
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -102,6 +122,46 @@ export default function ClientDashboard() {
     finally { setLoadingA(false) }
   }, [])
   useEffect(() => { loadAnnouncements() }, [loadAnnouncements])
+
+  // ── Load case stats, attorney contact, outstanding invoices ──
+  useEffect(() => {
+    let alive = true
+    async function load() {
+      setLoadingStats(true)
+      try {
+        const statsRes = await profileApi.clientStats()
+        if (!alive) return
+        const stats = statsRes.data.data as CaseStats
+        setCaseStats(stats)
+
+        // Fetch detailed attorney profile if we have an assigned attorney
+        if (stats.assigned_attorney?.id) {
+          try {
+            const attyRes = await profileApi.getAttorney(stats.assigned_attorney.id)
+            if (alive) setAttorneyContact(attyRes.data.data as AttorneyContact)
+          } catch { /* best-effort */ }
+        }
+
+        // Fetch cases to collect outstanding (sent) invoices
+        try {
+          const casesRes = await casesApi.list({ status: 'active' })
+          const myCases: Array<{ id: number; case_number: string }> = casesRes.data.data || []
+          const invoicePromises = myCases.slice(0, 10).map((c: { id: number; case_number: string }) =>
+            invoiceApi.list(c.id).then((r: any) =>
+              (r.data.data as any[])
+                .filter((inv: any) => inv.status === 'sent')
+                .map((inv: any) => ({ ...inv, case_number: c.case_number }))
+            ).catch(() => [])
+          )
+          const nested = await Promise.all(invoicePromises)
+          if (alive) setOutstandingInvoices(nested.flat().slice(0, 5))
+        } catch { /* best-effort */ }
+      } catch { /* best-effort */ }
+      finally { if (alive) setLoadingStats(false) }
+    }
+    load()
+    return () => { alive = false }
+  }, [])
 
   // ── Load conversations ───────────────────────────────
   const loadConversations = useCallback(async () => {
@@ -327,6 +387,78 @@ export default function ClientDashboard() {
               <HelpCircle size={17} /> Support
             </button>
           </nav>
+
+          {/* ── Case Status Cards ── */}
+          {loadingStats ? (
+            <div className="loading-state small" style={{ marginTop: 12 }}><Loader2 size={16} className="spin" /></div>
+          ) : caseStats && (
+            <div className="sidebar-case-stats">
+              <h4><FolderOpen size={14} /> My Cases</h4>
+              <div className="case-stat-cards">
+                <div className="case-stat-card active" onClick={() => navigate('/cases?status=active')}>
+                  <span className="case-stat-num">{caseStats.active_cases}</span>
+                  <span className="case-stat-label">Active</span>
+                </div>
+                <div className="case-stat-card pending" onClick={() => navigate('/cases?status=pending')}>
+                  <span className="case-stat-num">{caseStats.pending_cases}</span>
+                  <span className="case-stat-label">Pending</span>
+                </div>
+                <div className="case-stat-card closed" onClick={() => navigate('/cases?status=closed')}>
+                  <span className="case-stat-num">{caseStats.completed_cases}</span>
+                  <span className="case-stat-label">Closed</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Outstanding Invoices ── */}
+          {outstandingInvoices.length > 0 && (
+            <div className="sidebar-invoices">
+              <h4><DollarSign size={14} /> Outstanding Invoices</h4>
+              {outstandingInvoices.map(inv => (
+                <div
+                  key={inv.id}
+                  className="invoice-item"
+                  onClick={() => navigate(`/cases/${inv.case_id}`)}
+                >
+                  <div className="invoice-item-top">
+                    <span className="invoice-num">{inv.invoice_number}</span>
+                    <span className="invoice-amount">₱{Number(inv.total_amount).toLocaleString()}</span>
+                  </div>
+                  <span className="invoice-case">{inv.case_number}</span>
+                  {inv.due_date && (
+                    <span className="invoice-due">
+                      <Clock size={10} /> Due {new Date(inv.due_date).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Attorney Contact Card ── */}
+          {attorneyContact && (
+            <div className="sidebar-attorney-card">
+              <h4><Users size={14} /> Your Attorney</h4>
+              <strong>{attorneyContact.fullname}</strong>
+              {attorneyContact.law_firm && (
+                <span className="atty-firm"><Building2 size={11} /> {attorneyContact.law_firm}</span>
+              )}
+              {attorneyContact.email && (
+                <a href={`mailto:${attorneyContact.email}`} className="atty-contact-link">
+                  <Mail size={11} /> {attorneyContact.email}
+                </a>
+              )}
+              {attorneyContact.phone && (
+                <a href={`tel:${attorneyContact.phone}`} className="atty-contact-link">
+                  <Phone size={11} /> {attorneyContact.phone}
+                </a>
+              )}
+              {attorneyContact.availability && (
+                <span className="atty-avail">{attorneyContact.availability}</span>
+              )}
+            </div>
+          )}
 
           {/* Upcoming hearings in sidebar */}
           {upcoming.length > 0 && (

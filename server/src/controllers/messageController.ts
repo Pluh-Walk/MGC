@@ -7,6 +7,7 @@ import { getEffectiveAttorneyId } from '../utils/scope'
 import { notifyWithEmail } from '../utils/emailNotify'
 import { newMessageEmail } from '../templates/emailTemplates'
 import { emitNewMessage } from '../socket'
+import { scanWithClamav } from '../config/upload'
 
 // â”€â”€â”€ Get Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
@@ -133,8 +134,20 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       'SELECT id, fullname FROM users WHERE id = ?', [receiver_id]
     )
     if (!receiver) {
+      if (file) fs.unlinkSync(file.path)
       res.status(404).json({ success: false, message: 'Recipient not found.' })
       return
+    }
+
+    // ClamAV antivirus scan for attachments (best-effort: passes through if ClamAV not available)
+    if (file) {
+      try {
+        await scanWithClamav(file.path)
+      } catch {
+        fs.unlinkSync(file.path)
+        res.status(400).json({ success: false, message: 'File rejected: potential virus detected.' })
+        return
+      }
     }
 
     const attachmentPath = file ? path.relative(process.cwd(), file.path).replace(/\\/g, '/') : null

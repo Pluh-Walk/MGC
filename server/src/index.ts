@@ -28,8 +28,11 @@ import adminRoutes from './routes/adminRoutes'
 import settingsRoutes from './routes/settingsRoutes'
 import auditRoutes from './routes/auditRoutes'
 import twoFactorRoutes from './routes/twoFactorRoutes'
+import templateRoutes from './routes/templateRoutes'
 import { globalSearch } from './controllers/searchController'
 import { startDeadlineReminder } from './scripts/deadlineReminder'
+import { startHearingReminder } from './scripts/hearingReminder'
+import { startDbBackup } from './scripts/dbBackup'
 import { createServer } from 'http'
 import { initSocket } from './socket'
 import pool from './config/db'
@@ -48,7 +51,7 @@ app.use(helmet({
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
 }))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
@@ -102,6 +105,7 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/admin/settings', settingsRoutes)
 app.use('/api/admin/audit', auditRoutes)
 app.use('/api/2fa', twoFactorRoutes)
+app.use('/api/templates', templateRoutes)
 app.get('/api/search', globalSearch)
 
 // ─── Health Check ─────────────────────────────────────────
@@ -155,4 +159,6 @@ initSocket(httpServer)
 httpServer.listen(PORT, () => {
   logger.info(`Server running on http://localhost:${PORT}`)
   startDeadlineReminder()
+  startHearingReminder()
+  startDbBackup()
 })

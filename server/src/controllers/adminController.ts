@@ -5,6 +5,7 @@ import pool from '../config/db'
 import { audit } from '../utils/audit'
 import { notify } from '../utils/notify'
 import { notifyWithEmail } from '../utils/emailNotify'
+import { signAccessToken } from '../utils/authTokens'
 import {
   accountSuspendedEmail,
   accountReactivatedEmail,
@@ -719,7 +720,39 @@ export const getCaseReport = async (_req: Request, res: Response): Promise<void>
        ORDER BY total_cases DESC`
     )
 
-    res.json({ success: true, data: { cases_by_month: casesByMonth, cases_by_type: casesByType, attorney_workload: workload } })
+    // ── Overdue deadlines per attorney ─────────────────────────────────────
+    const [overdueByAttorney] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id AS attorney_id, u.fullname AS attorney_name,
+              COUNT(cd.id) AS overdue_count
+       FROM case_deadlines cd
+       JOIN cases c ON c.id = cd.case_id AND c.deleted_at IS NULL
+       JOIN users u ON u.id = c.attorney_id
+       WHERE cd.is_completed = 0
+         AND cd.due_date < CURDATE()
+         AND c.status NOT IN ('closed','archived')
+       GROUP BY u.id
+       ORDER BY overdue_count DESC`
+    )
+
+    // ── Case outcome breakdown (closed cases) ──────────────────────────────
+    const [outcomeBreakdown] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(outcome, 'unspecified') AS outcome, COUNT(*) AS cnt
+       FROM cases
+       WHERE status = 'closed' AND deleted_at IS NULL
+       GROUP BY outcome
+       ORDER BY cnt DESC`
+    )
+
+    res.json({
+      success: true,
+      data: {
+        cases_by_month: casesByMonth,
+        cases_by_type: casesByType,
+        attorney_workload: workload,
+        overdue_by_attorney: overdueByAttorney,
+        outcome_breakdown: outcomeBreakdown,
+      },
+    })
   } catch (err: any) {
     console.error('[admin]', err)
     res.status(500).json({ success: false, message: 'Server error.' })
@@ -768,6 +801,236 @@ export const getUserLoginAttempts = async (req: Request, res: Response): Promise
     res.json({ success: true, data: rows })
   } catch (err: any) {
     console.error('[admin]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── Financial Report (§9.2) ────────────────────────────────
+export const getFinancialReport = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // ── Revenue summary (all-time) ─────────────────────────────
+    const [[summary]] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         COALESCE(SUM(total_amount), 0) AS total_billed,
+         COALESCE(SUM(CASE WHEN status = 'paid'                     THEN total_amount ELSE 0 END), 0) AS collected,
+         COALESCE(SUM(CASE WHEN status IN ('sent','overdue')        THEN total_amount ELSE 0 END), 0) AS outstanding,
+         COALESCE(SUM(CASE WHEN status = 'void'                     THEN total_amount ELSE 0 END), 0) AS voided,
+         COUNT(*)                                                  AS total_invoices,
+         SUM(CASE WHEN status = 'paid'    THEN 1 ELSE 0 END)       AS paid_count,
+         SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END)       AS overdue_count
+       FROM invoices`
+    )
+
+    // ── Revenue by month (last 12) ─────────────────────────────
+    const [byMonth] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         DATE_FORMAT(created_at, '%Y-%m') AS month,
+         COALESCE(SUM(total_amount), 0)  AS billed,
+         COALESCE(SUM(CASE WHEN status = 'paid' THEN total_amount ELSE 0 END), 0) AS collected
+       FROM invoices
+       WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+       GROUP BY month ORDER BY month`
+    )
+
+    // ── Invoice aging (unpaid only) ───────────────────────────
+    const [aging] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) BETWEEN 0  AND 30  THEN total_amount ELSE 0 END) AS bucket_0_30,
+         SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) BETWEEN 31 AND 60  THEN total_amount ELSE 0 END) AS bucket_31_60,
+         SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) BETWEEN 61 AND 90  THEN total_amount ELSE 0 END) AS bucket_61_90,
+         SUM(CASE WHEN DATEDIFF(CURDATE(), created_at) > 90               THEN total_amount ELSE 0 END) AS bucket_90plus
+       FROM invoices
+       WHERE status IN ('sent','overdue')`
+    )
+
+    // ── Top 10 clients by billed amount ──────────────────────
+    const [topClients] = await pool.query<RowDataPacket[]>(
+      `SELECT u.fullname, u.email,
+              COALESCE(SUM(i.total_amount), 0) AS total_billed,
+              COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.total_amount ELSE 0 END), 0) AS total_paid
+       FROM invoices i
+       JOIN cases c ON c.id = i.case_id
+       JOIN users u ON u.id = c.client_id
+       GROUP BY c.client_id, u.fullname, u.email
+       ORDER BY total_billed DESC
+       LIMIT 10`
+    )
+
+    // ── Revenue by attorney ───────────────────────────────────
+    const [byAttorney] = await pool.query<RowDataPacket[]>(
+      `SELECT u.fullname,
+              COALESCE(SUM(i.total_amount), 0) AS total_billed,
+              COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.total_amount ELSE 0 END), 0) AS collected
+       FROM invoices i
+       JOIN cases c ON c.id = i.case_id
+       JOIN users u ON u.id = c.attorney_id
+       GROUP BY c.attorney_id, u.fullname
+       ORDER BY total_billed DESC`
+    )
+
+    res.json({
+      success: true,
+      data: {
+        summary:     summary,
+        by_month:    byMonth,
+        aging:       aging[0] ?? {},
+        top_clients: topClients,
+        by_attorney: byAttorney,
+      },
+    })
+  } catch (err: any) {
+    console.error('[admin]', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── GET /api/admin/reports/workload ───────────────────────────────
+export const getWorkloadReport = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // ── Attorney workload ──────────────────────────────────────
+    const [attorneyLoad] = await pool.query<RowDataPacket[]>(
+      `SELECT u.id, u.fullname,
+              COUNT(DISTINCT c.id) AS active_cases,
+              SUM(CASE WHEN d.due_date < CURDATE() AND d.is_completed = 0 THEN 1 ELSE 0 END) AS overdue_deadlines,
+              SUM(CASE WHEN t.status != 'done' AND t.status != 'cancelled' THEN 1 ELSE 0 END) AS open_tasks
+       FROM users u
+       LEFT JOIN cases c ON c.attorney_id = u.id AND c.status = 'active' AND c.deleted_at IS NULL
+       LEFT JOIN case_deadlines d ON d.case_id = c.id
+       LEFT JOIN case_tasks t ON t.case_id = c.id
+       WHERE u.role = 'attorney' AND u.status = 'active'
+       GROUP BY u.id, u.fullname
+       ORDER BY active_cases DESC`
+    )
+
+    // ── Case type distribution ─────────────────────────────────
+    const [caseTypes] = await pool.query<RowDataPacket[]>(
+      `SELECT case_type, COUNT(*) AS total,
+              SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+              SUM(CASE WHEN status IN ('closed','archived') THEN 1 ELSE 0 END) AS closed
+       FROM cases WHERE deleted_at IS NULL
+       GROUP BY case_type ORDER BY total DESC`
+    )
+
+    // ── Case outcome distribution (closed only) ────────────────
+    const [outcomes] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(outcome, 'unspecified') AS outcome, COUNT(*) AS total
+       FROM cases WHERE status IN ('closed','archived') AND deleted_at IS NULL
+       GROUP BY outcome ORDER BY total DESC`
+    )
+
+    // ── Overdue deadlines list (most critical) ─────────────────
+    const [overdueList] = await pool.query<RowDataPacket[]>(
+      `SELECT d.id, d.title, d.due_date, d.deadline_type,
+              c.id AS case_id, c.title AS case_title, c.case_number,
+              u.fullname AS attorney_name,
+              DATEDIFF(CURDATE(), d.due_date) AS days_overdue
+       FROM case_deadlines d
+       JOIN cases c ON c.id = d.case_id
+       JOIN users u ON u.id = c.attorney_id
+       WHERE d.due_date < CURDATE() AND d.is_completed = 0 AND c.deleted_at IS NULL AND c.status = 'active'
+       ORDER BY d.due_date ASC
+       LIMIT 50`
+    )
+
+    res.json({
+      success: true,
+      data: {
+        attorney_workload: attorneyLoad,
+        case_types:        caseTypes,
+        outcomes:          outcomes,
+        overdue_deadlines: overdueList,
+      },
+    })
+  } catch (err: any) {
+    console.error('[admin] getWorkloadReport:', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+// ─── §12.2 User Impersonation ───────────────────────────────
+export const impersonateUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const admin = (req as any).user
+    const targetId = Number(req.params.id)
+
+    if (!targetId) {
+      res.status(400).json({ success: false, message: 'Invalid user ID.' })
+      return
+    }
+    // Cannot impersonate self or another admin
+    if (targetId === admin.id) {
+      res.status(400).json({ success: false, message: 'Cannot impersonate yourself.' })
+      return
+    }
+
+    const [[target]] = await pool.query<RowDataPacket[]>(
+      `SELECT id, fullname, username, role, status FROM users WHERE id = ?`,
+      [targetId]
+    )
+    if (!target) {
+      res.status(404).json({ success: false, message: 'User not found.' })
+      return
+    }
+    if (target.role === 'admin') {
+      res.status(403).json({ success: false, message: 'Cannot impersonate admin accounts.' })
+      return
+    }
+    if (target.status !== 'active') {
+      res.status(403).json({ success: false, message: 'Cannot impersonate a suspended or inactive user.' })
+      return
+    }
+
+    // Log the impersonation session
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO impersonation_log (admin_id, target_user_id, ip_address) VALUES (?, ?, ?)`,
+      [admin.id, targetId, req.ip || null]
+    )
+    const logId = result.insertId
+
+    // Issue a short-lived impersonation token (15 min, same as normal)
+    const token = signAccessToken({
+      id: target.id,
+      fullname: target.fullname,
+      username: target.username,
+      role: target.role,
+      impersonated_by: admin.id,
+      impersonation_log_id: logId,
+    } as any)
+
+    await audit(req, 'IMPERSONATION_STARTED', 'user', targetId, JSON.stringify({ admin_id: admin.id, log_id: logId }))
+
+    res.json({
+      success: true,
+      token,
+      impersonation_log_id: logId,
+      target: { id: target.id, fullname: target.fullname, username: target.username, role: target.role },
+    })
+  } catch (err: any) {
+    console.error('[admin] impersonateUser:', err)
+    res.status(500).json({ success: false, message: 'Server error.' })
+  }
+}
+
+export const endImpersonation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const logId = Number(req.params.logId)
+
+    if (!logId) {
+      res.status(400).json({ success: false, message: 'Invalid log ID.' })
+      return
+    }
+
+    await pool.query(
+      `UPDATE impersonation_log SET ended_at = NOW() WHERE id = ? AND ended_at IS NULL`,
+      [logId]
+    )
+
+    await audit(req, 'IMPERSONATION_ENDED', 'user', user.id, JSON.stringify({ log_id: logId }))
+
+    res.json({ success: true })
+  } catch (err: any) {
+    console.error('[admin] endImpersonation:', err)
     res.status(500).json({ success: false, message: 'Server error.' })
   }
 }

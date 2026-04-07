@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Download, Users, Briefcase, AlertCircle, X, TrendingUp, Activity } from 'lucide-react'
+import { BarChart3, Download, Users, Briefcase, AlertCircle, X, TrendingUp, Activity, DollarSign, ClipboardList } from 'lucide-react'
 import { adminApi } from '../services/api'
 
 interface UserReport {
@@ -14,10 +14,27 @@ interface CaseReport {
   attorney_workload: Array<{ id: number; fullname: string; total_cases: number; active: number; closed: number }>
 }
 
+interface FinancialReport {
+  summary: { total_billed: number; collected: number; outstanding: number; voided: number; total_invoices: number; paid_count: number; overdue_count: number }
+  by_month: Array<{ month: string; billed: number; collected: number }>
+  aging: { bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90plus: number }
+  top_clients: Array<{ fullname: string; email: string; total_billed: number; total_paid: number }>
+  by_attorney: Array<{ fullname: string; total_billed: number; collected: number }>
+}
+
+interface WorkloadReport {
+  attorney_workload: Array<{ id: number; fullname: string; active_cases: number; overdue_deadlines: number; open_tasks: number }>
+  case_types: Array<{ case_type: string; total: number; active: number; closed: number }>
+  outcomes: Array<{ outcome: string; total: number }>
+  overdue_deadlines: Array<{ id: number; title: string; due_date: string; deadline_type: string; case_id: number; case_title: string; case_number: string; attorney_name: string; days_overdue: number }>
+}
+
 export default function AdminReports() {
-  const [tab, setTab] = useState<'users' | 'cases'>('users')
+  const [tab, setTab] = useState<'users' | 'cases' | 'financial' | 'workload'>('users')
   const [userReport, setUserReport] = useState<UserReport | null>(null)
   const [caseReport, setCaseReport] = useState<CaseReport | null>(null)
+  const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null)
+  const [workloadReport, setWorkloadReport] = useState<WorkloadReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -25,14 +42,19 @@ export default function AdminReports() {
     setLoading(true)
     setError('')
 
-    const api = tab === 'users' ? adminApi.userReport() : adminApi.caseReport()
+    const apiFn = tab === 'users' ? adminApi.userReport()
+                : tab === 'cases' ? adminApi.caseReport()
+                : tab === 'financial' ? adminApi.financialReport()
+                : adminApi.workloadReport()
 
-    api
-      .then(res => {
+    apiFn
+      .then((res: any) => {
         if (tab === 'users') setUserReport(res.data.data)
-        else setCaseReport(res.data.data)
+        else if (tab === 'cases') setCaseReport(res.data.data)
+        else if (tab === 'financial') setFinancialReport(res.data.data)
+        else setWorkloadReport(res.data.data)
       })
-      .catch(err => setError(err.response?.data?.message || 'Failed to load.'))
+      .catch((err: any) => setError(err.response?.data?.message || 'Failed to load.'))
       .finally(() => setLoading(false))
   }
 
@@ -56,6 +78,10 @@ export default function AdminReports() {
       exportCSV(userReport.registrations.length ? userReport.registrations : userReport.top_active_users, 'user_report')
     } else if (tab === 'cases' && caseReport) {
       exportCSV(caseReport.attorney_workload.length ? caseReport.attorney_workload : caseReport.cases_by_type, 'case_report')
+    } else if (tab === 'financial' && financialReport) {
+      exportCSV(financialReport.by_month, 'financial_report')
+    } else if (tab === 'workload' && workloadReport) {
+      exportCSV(workloadReport.attorney_workload, 'workload_report')
     }
   }
 
@@ -80,7 +106,7 @@ export default function AdminReports() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)' }}>
-        {(['users', 'cases'] as const).map(t => (
+        {(['users', 'cases', 'financial', 'workload'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -92,8 +118,8 @@ export default function AdminReports() {
               display: 'flex', alignItems: 'center', gap: '0.5rem', transition: 'color 0.2s',
             }}
           >
-            {t === 'users' ? <Users size={16} /> : <Briefcase size={16} />}
-            {t === 'users' ? 'User Report' : 'Case Report'}
+            {t === 'users' ? <Users size={16} /> : t === 'cases' ? <Briefcase size={16} /> : t === 'financial' ? <DollarSign size={16} /> : <ClipboardList size={16} />}
+            {t === 'users' ? 'User Report' : t === 'cases' ? 'Case Report' : t === 'financial' ? 'Financial' : 'Workload'}
           </button>
         ))}
       </div>
@@ -255,6 +281,214 @@ export default function AdminReports() {
                         <td style={{ fontWeight: 700 }}>{a.total_cases}</td>
                         <td><span className="pill pill-active">{a.active ?? 0}</span></td>
                         <td><span className="pill pill-inactive">{a.closed ?? 0}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : tab === 'financial' && financialReport ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          {/* KPI cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+            {[
+              { label: 'Total Billed',  val: financialReport.summary.total_billed,  color: '#3b82f6' },
+              { label: 'Collected',     val: financialReport.summary.collected,     color: '#22c55e' },
+              { label: 'Outstanding',   val: financialReport.summary.outstanding,   color: '#f59e0b' },
+              { label: 'Overdue Invs',  val: financialReport.summary.overdue_count, color: '#dc2626', isCnt: true },
+            ].map(item => (
+              <div key={item.label} className="admin-stat-card" style={{ padding: '1rem', borderLeft: `3px solid ${item.color}` }}>
+                <div className="stat-label">{item.label}</div>
+                <div className="stat-value" style={{ color: item.color }}>
+                  {item.isCnt
+                    ? item.val
+                    : new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(item.val))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Revenue by Month */}
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><TrendingUp size={16} /> Revenue by Month</h3></div>
+            <div style={{ padding: '1rem 1.25rem' }}>
+              {financialReport.by_month.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>No invoice data.</p>
+              ) : (() => {
+                const maxM = Math.max(...financialReport.by_month.map(m => Math.max(m.billed, m.collected)), 1)
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    {financialReport.by_month.map(row => (
+                      <div key={row.month}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 3 }}>
+                          <span>{row.month}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 60, fontSize: '0.7rem', color: '#3b82f6' }}>Billed</span>
+                            <Bar value={row.billed} max={maxM} color="#3b82f6" />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ width: 60, fontSize: '0.7rem', color: '#22c55e' }}>Collected</span>
+                            <Bar value={row.collected} max={maxM} color="#22c55e" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* Invoice Aging */}
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><DollarSign size={16} /> Invoice Aging (Unpaid)</h3></div>
+            <div style={{ padding: '1rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {[
+                { label: '0–30 days',  key: 'bucket_0_30',  color: '#22c55e' },
+                { label: '31–60 days', key: 'bucket_31_60', color: '#f59e0b' },
+                { label: '61–90 days', key: 'bucket_61_90', color: '#f97316' },
+                { label: '90+ days',   key: 'bucket_90plus', color: '#dc2626' },
+              ].map(({ label, key, color }) => {
+                const val = Number((financialReport.aging as any)[key] ?? 0)
+                const total = ['bucket_0_30','bucket_31_60','bucket_61_90','bucket_90plus'].reduce(
+                  (s, k) => s + Number((financialReport.aging as any)[k] ?? 0), 0)
+                const pct = total > 0 ? Math.round((val / total) * 100) : 0
+                return (
+                  <div key={key}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 4 }}>
+                      <span>{label}</span>
+                      <span style={{ fontWeight: 600 }}>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(val)} ({pct}%)</span>
+                    </div>
+                    <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', borderRadius: 4, width: `${pct}%`, background: color }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Revenue by Attorney */}
+          {financialReport.by_attorney.length > 0 && (
+            <div className="admin-activity-card">
+              <div className="card-header"><h3><Users size={16} /> Revenue by Attorney</h3></div>
+              <div style={{ padding: 0, overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead><tr><th>Attorney</th><th>Billed</th><th>Collected</th></tr></thead>
+                  <tbody>
+                    {financialReport.by_attorney.map((a, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{a.fullname}</td>
+                        <td>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(a.total_billed))}</td>
+                        <td style={{ color: '#22c55e', fontWeight: 600 }}>{new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(Number(a.collected))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : tab === 'workload' && workloadReport ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+          {/* Attorney Workload */}
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><Users size={16} /> Attorney Workload</h3></div>
+            <div style={{ padding: 0, overflowX: 'auto' }}>
+              {workloadReport.attorney_workload.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>No active attorneys.</p>
+              ) : (
+                <table className="data-table">
+                  <thead><tr><th>Attorney</th><th>Active Cases</th><th>Overdue Deadlines</th><th>Open Tasks</th></tr></thead>
+                  <tbody>
+                    {workloadReport.attorney_workload.map(a => (
+                      <tr key={a.id}>
+                        <td style={{ fontWeight: 600 }}>{a.fullname}</td>
+                        <td style={{ fontWeight: 700 }}>{a.active_cases}</td>
+                        <td style={{ color: Number(a.overdue_deadlines) > 0 ? '#dc2626' : 'inherit', fontWeight: Number(a.overdue_deadlines) > 0 ? 700 : 400 }}>{a.overdue_deadlines}</td>
+                        <td>{a.open_tasks}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Case Type Distribution */}
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><Briefcase size={16} /> Case Type Distribution</h3></div>
+            <div style={{ padding: 0, overflowX: 'auto' }}>
+              {workloadReport.case_types.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>No cases.</p>
+              ) : (() => {
+                const maxT = Math.max(...workloadReport.case_types.map(c => c.total), 1)
+                return (
+                  <table className="data-table">
+                    <thead><tr><th>Type</th><th>Total</th><th>Active</th><th>Closed</th><th style={{ width: '35%' }}></th></tr></thead>
+                    <tbody>
+                      {workloadReport.case_types.map((c, i) => (
+                        <tr key={i}>
+                          <td style={{ fontWeight: 600, textTransform: 'capitalize' }}>{c.case_type}</td>
+                          <td style={{ fontWeight: 700 }}>{c.total}</td>
+                          <td><span className="pill pill-active">{c.active}</span></td>
+                          <td><span className="pill pill-inactive">{c.closed}</span></td>
+                          <td><Bar value={c.total} max={maxT} color="var(--accent)" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* Case Outcomes */}
+          {workloadReport.outcomes.length > 0 && (
+            <div className="admin-activity-card">
+              <div className="card-header"><h3><Activity size={16} /> Case Outcomes (Closed)</h3></div>
+              <div style={{ padding: '1rem 1.25rem' }}>
+                {(() => {
+                  const maxO = Math.max(...workloadReport.outcomes.map(o => o.total), 1)
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {workloadReport.outcomes.map((o, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <span style={{ width: 120, fontSize: '0.82rem', color: 'var(--text-muted)', textTransform: 'capitalize', flexShrink: 0 }}>{o.outcome.replace(/_/g, ' ')}</span>
+                          <Bar value={o.total} max={maxO} color="#8b5cf6" />
+                          <span style={{ fontWeight: 700, fontSize: '0.88rem', width: 32, textAlign: 'right' }}>{o.total}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Overdue Deadlines */}
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><ClipboardList size={16} /> Overdue Deadlines</h3></div>
+            <div style={{ padding: 0, overflowX: 'auto' }}>
+              {workloadReport.overdue_deadlines.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>No overdue deadlines.</p>
+              ) : (
+                <table className="data-table">
+                  <thead><tr><th>Deadline</th><th>Type</th><th>Case</th><th>Attorney</th><th>Due Date</th><th>Days Overdue</th></tr></thead>
+                  <tbody>
+                    {workloadReport.overdue_deadlines.map(d => (
+                      <tr key={d.id}>
+                        <td style={{ fontWeight: 600 }}>{d.title}</td>
+                        <td style={{ textTransform: 'capitalize', fontSize: '0.82rem' }}>{d.deadline_type?.replace(/_/g, ' ') || '—'}</td>
+                        <td style={{ fontSize: '0.82rem' }}>{d.case_number} — {d.case_title}</td>
+                        <td style={{ fontSize: '0.82rem' }}>{d.attorney_name}</td>
+                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{new Date(d.due_date).toLocaleDateString()}</td>
+                        <td><span style={{ color: '#dc2626', fontWeight: 700 }}>{d.days_overdue}d</span></td>
                       </tr>
                     ))}
                   </tbody>

@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Scale, ArrowLeft, FileText, Clock, StickyNote, Upload,
+  Scale, ArrowLeft, FileText, Clock, StickyNote, Upload, Download,
   CheckCircle, AlertCircle, Paperclip, Lock, Globe, Trash2,
-  Pencil, CheckCircle2, X, Users, CalendarClock, AlertTriangle, Plus, Loader2,
+  Pencil, CheckCircle2, X, Users, CalendarClock, AlertTriangle, Plus, Loader2, Search,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import InvoiceManager from '../components/InvoiceManager'
 import TimeTracker from '../components/TimeTracker'
-import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tagsApi } from '../services/api'
+import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tagsApi, tasksApi, stagesApi } from '../services/api'
 
-type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel'
+type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel' | 'tasks' | 'stages'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:    '#a78bfa',
@@ -80,12 +80,29 @@ export default function CaseDetail() {
   const [deadlineSaving, setDeadlineSaving] = useState(false)
   const [editDeadline, setEditDeadline] = useState<any>(null)
 
+  // Tasks state
+  const [tasks, setTasks] = useState<any[]>([])
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', due_date: '', priority: 'normal', assigned_to: '' })
+  const [taskSaving, setTaskSaving] = useState(false)
+
+  // Stages state
+  const [stages, setStages] = useState<any[]>([])
+  const [stagesLoaded, setStagesLoaded] = useState(false)
+  const [stageAdvancing, setStageAdvancing] = useState<number | null>(null)
+  const [initializingStages, setInitializingStages] = useState(false)
+
+  // Document bulk selection state
+  const [selectedDocs, setSelectedDocs] = useState<Set<number>>(new Set())
+  const [docSearch, setDocSearch] = useState('')
+
   // Billing state
   const [billingEntries, setBillingEntries] = useState<any[]>([])
   const [billingTotal, setBillingTotal] = useState(0)
   const [showBillingForm, setShowBillingForm] = useState(false)
   const [billingSaving, setBillingSaving] = useState(false)
   const [billingForm, setBillingForm] = useState({ entry_type: 'flat_fee', description: '', hours: '', rate: '', amount: '', billing_date: '', is_billed: false, invoice_number: '', notes: '' })
+  const [retainerSummary, setRetainerSummary] = useState<{ retainer_amount: number; total_deducted: number; remaining_balance: number; entries: any[] } | null>(null)
 
   // Relations state
   const [relations, setRelations] = useState<any[]>([])
@@ -123,18 +140,25 @@ export default function CaseDetail() {
     }
   }
 
-  const fetchDocs = async () => {
+  const fetchDocs = async (search?: string) => {
     try {
-      const res = await documentsApi.list(Number(id))
+      const res = await documentsApi.list(Number(id), search)
       setDocs(res.data.data)
     } catch {}
   }
 
   useEffect(() => { fetchCase() }, [id])
-  useEffect(() => { if (activeTab === 'documents') fetchDocs() }, [activeTab])
+  useEffect(() => { if (activeTab === 'documents') fetchDocs(docSearch || undefined) }, [activeTab])
   useEffect(() => {
     if (activeTab === 'billing') {
       billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) }).catch(() => {})
+      billingApi.retainerSummary(Number(id)).then(r => setRetainerSummary(r.data.data)).catch(() => {})
+    }
+    if (activeTab === 'tasks') {
+      tasksApi.list(Number(id)).then(r => setTasks(r.data.data ?? [])).catch(() => {})
+    }
+    if (activeTab === 'stages' && !stagesLoaded) {
+      stagesApi.list(Number(id)).then(r => { setStages(r.data.data ?? []); setStagesLoaded(true) }).catch(() => {})
     }
     if (activeTab === 'relations') {
       relationsApi.list(Number(id)).then(r => setRelations(r.data.data)).catch(() => {})
@@ -226,6 +250,11 @@ export default function CaseDetail() {
   }
 
   // ─── Billing handlers ────────────────────────────────────
+  const refreshBilling = () => {
+    billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) })
+    billingApi.retainerSummary(Number(id)).then(r => setRetainerSummary(r.data.data)).catch(() => {})
+  }
+
   const handleAddBilling = async () => {
     if (!billingForm.description.trim() || !billingForm.amount) return
     setBillingSaving(true)
@@ -233,19 +262,19 @@ export default function CaseDetail() {
       await billingApi.add(Number(id), { ...billingForm, amount: Number(billingForm.amount), hours: billingForm.hours ? Number(billingForm.hours) : null, rate: billingForm.rate ? Number(billingForm.rate) : null })
       setShowBillingForm(false)
       setBillingForm({ entry_type: 'flat_fee', description: '', hours: '', rate: '', amount: '', billing_date: '', is_billed: false, invoice_number: '', notes: '' })
-      billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) })
+      refreshBilling()
     } catch {} finally { setBillingSaving(false) }
   }
 
   const handleDeleteBilling = async (entryId: number) => {
     if (!confirm('Delete this billing entry?')) return
     await billingApi.delete(Number(id), entryId)
-    billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) })
+    refreshBilling()
   }
 
   const handleMarkBillingPaid = async (entryId: number) => {
     await billingApi.update(Number(id), entryId, { is_paid: true, paid_at: new Date().toISOString().slice(0, 10) })
-    billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) })
+    refreshBilling()
   }
 
   // ─── Relations handlers ───────────────────────────────────
@@ -403,7 +432,10 @@ export default function CaseDetail() {
     try {
       await documentsApi.upload(Number(id), fd)
       fetchDocs()
-    } catch {} finally {
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Upload failed. Please try again.'
+      alert(msg)
+    } finally {
       setUploading(false)
       e.target.value = ''
     }
@@ -485,7 +517,14 @@ export default function CaseDetail() {
         <div className="case-header-card">
           <div className="case-header-left">
             <span className="mono case-number">{data.case_number}</span>
-            <h2>{data.title}</h2>
+            <h2>
+              {data.title}
+              {data.legal_hold ? (
+                <span style={{ marginLeft: 10, fontSize: '0.75rem', background: '#dc2626', color: '#fff', borderRadius: 6, padding: '2px 8px', fontWeight: 700, verticalAlign: 'middle' }}>
+                  🔒 LEGAL HOLD
+                </span>
+              ) : null}
+            </h2>
             <div className="case-meta-row">
               <span style={{ textTransform: 'capitalize' }}>{data.case_type}</span>
               <span>·</span>
@@ -550,6 +589,19 @@ export default function CaseDetail() {
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
+          {/* Attorney/secretary/client tasks tab */}
+          <button className={`tab-btn${activeTab === 'tasks' ? ' active' : ''}`} onClick={() => setActiveTab('tasks')}>
+            <CheckCircle size={14} /> Tasks
+            {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length > 0 && (
+              <span style={{ marginLeft: 4, background: '#3b82f6', color: '#fff', borderRadius: 999, fontSize: '0.7rem', padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>
+                {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length}
+              </span>
+            )}
+          </button>
+          {/* Case progress stages */}
+          <button className={`tab-btn${activeTab === 'stages' ? ' active' : ''}`} onClick={() => setActiveTab('stages')}>
+            Progress
+          </button>
           {/* Attorney-only extra tabs */}
           {(user?.role === 'attorney' || user?.role === 'secretary') && (
             <>
@@ -707,6 +759,28 @@ export default function CaseDetail() {
                 {user?.role !== 'client' && (
                   <div className="info-item"><label>Retainer</label><span>{data.retainer_amount != null ? `₱ ${Number(data.retainer_amount).toLocaleString()}` : '—'}</span></div>
                 )}
+                {(user?.role === 'attorney' || user?.role === 'admin') && (
+                  <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+                    <label>Legal Hold</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      {data.legal_hold ? (
+                        <>
+                          <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, padding: '2px 10px', fontWeight: 700, fontSize: '0.85rem' }}>Active</span>
+                          {data.legal_hold_note && <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{data.legal_hold_note}</span>}
+                          {data.legal_hold_at && <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>Since {new Date(data.legal_hold_at).toLocaleDateString()}</span>}
+                          <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '3px 10px', color: '#16a34a' }}
+                            onClick={async () => { if (!confirm('Lift legal hold?')) return; await casesApi.liftLegalHold(data.id); fetchCase() }}>Lift Hold</button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>None</span>
+                          <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '3px 10px', color: '#dc2626' }}
+                            onClick={async () => { const note = prompt('Note for legal hold (optional):') ?? undefined; await casesApi.placeLegalHold(data.id, note); fetchCase() }}>Place Hold</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {data.status === 'closed' && (
                   <>
                     <div className="info-item"><label>Outcome</label><span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{data.outcome || '—'}</span></div>
@@ -826,15 +900,112 @@ export default function CaseDetail() {
                   {docVisible ? <Globe size={13} /> : <Lock size={13} />}
                   {docVisible ? 'Visible to client' : 'Hidden from client'}
                 </label>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '4px 10px', marginLeft: 'auto' }}
+                  title="Export privilege log as CSV"
+                  onClick={async () => {
+                    const r = await documentsApi.privilegeLog(Number(id))
+                    const url = URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }))
+                    const a = document.createElement('a'); a.href = url; a.download = `privilege-log-case-${id}.csv`; a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  <FileText size={13} /> Privilege Log
+                </button>
               </div>
             )}
+            {user?.role === 'client' && (
+              <div className="upload-row" style={{ marginBottom: '0.75rem' }}>
+                <label className="btn-secondary upload-label">
+                  <Upload size={15} />
+                  {uploading ? 'Uploading…' : 'Upload Supporting Document'}
+                  <input type="file" hidden onChange={handleUpload} disabled={uploading} />
+                </label>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                  Uploaded files will be visible to your attorney.
+                </span>
+              </div>
+            )}
+            {/* Document search bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.75rem' }}>
+              <input
+                className="profile-input"
+                style={{ flex: 1, fontSize: '0.85rem', padding: '5px 10px' }}
+                type="search"
+                placeholder="Search documents by name or content…"
+                value={docSearch}
+                onChange={e => setDocSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') fetchDocs(docSearch || undefined) }}
+              />
+              <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '5px 12px', flexShrink: 0 }}
+                onClick={() => fetchDocs(docSearch || undefined)}
+              ><Search size={13} /> Search</button>
+              {docSearch && (
+                <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '5px 10px', flexShrink: 0 }}
+                  onClick={() => { setDocSearch(''); fetchDocs() }}
+                >Clear</button>
+              )}
+            </div>
             {docs.length === 0 ? (
-              <div className="empty-state"><Paperclip size={36} className="empty-icon" /><p>No documents uploaded.</p></div>
+              <div className="empty-state"><Paperclip size={36} className="empty-icon" /><p>{docSearch ? 'No documents match your search.' : 'No documents uploaded.'}</p></div>
             ) : (
-              <div className="doc-list">
-                {docs.map((d: any) => (
+              <>
+                {/* Bulk action bar */}
+                {selectedDocs.size > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '0.5rem 0.9rem', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#1d4ed8', fontWeight: 600 }}>{selectedDocs.size} selected</span>
+                    <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '3px 10px' }}
+                      onClick={async () => {
+                        const r = await documentsApi.bulkDownload(Number(id), Array.from(selectedDocs))
+                        const url = URL.createObjectURL(new Blob([r.data], { type: 'application/zip' }))
+                        const a = document.createElement('a'); a.href = url; a.download = `documents-case-${id}.zip`; a.click()
+                        URL.revokeObjectURL(url)
+                      }}
+                    ><Download size={12} /> Download All</button>
+                    {user?.role === 'attorney' && (
+                      <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '3px 10px', color: '#dc2626' }}
+                        onClick={async () => {
+                          if (!confirm(`Delete ${selectedDocs.size} document(s)?`)) return
+                          await documentsApi.bulkDelete(Number(id), Array.from(selectedDocs))
+                          setSelectedDocs(new Set())
+                          fetchDocs()
+                        }}
+                      ><Trash2 size={12} /> Delete Selected</button>
+                    )}
+                    <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '3px 10px', marginLeft: 'auto' }}
+                      onClick={() => setSelectedDocs(new Set())}
+                    >Clear</button>
+                  </div>
+                )}
+                <div className="doc-list">
+                  {/* Select All row */}
+                  {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                    <div style={{ padding: '0.3rem 0.5rem 0.5rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDocs.size === docs.length}
+                        onChange={e => setSelectedDocs(e.target.checked ? new Set(docs.map((d: any) => d.id)) : new Set())}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Select All</span>
+                    </div>
+                  )}
+                  {docs.map((d: any) => (
                   <div key={d.id}>
                     <div className="doc-item">
+                      {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                        <input
+                          type="checkbox"
+                          style={{ marginRight: 8, cursor: 'pointer', flexShrink: 0 }}
+                          checked={selectedDocs.has(d.id)}
+                          onChange={e => {
+                            const next = new Set(selectedDocs)
+                            if (e.target.checked) next.add(d.id); else next.delete(d.id)
+                            setSelectedDocs(next)
+                          }}
+                        />
+                      )}
                       <div className="doc-icon"><FileText size={18} /></div>
                       <div className="doc-info">
                         <span className="doc-name">{d.original_name}</span>
@@ -931,6 +1102,7 @@ export default function CaseDetail() {
                   </div>
                 ))}
               </div>
+              </>
             )}
           </div>
         )}
@@ -1136,6 +1308,47 @@ export default function CaseDetail() {
         {/* ═══ Tab: Billing ═══════════════════════════════════════ */}
         {activeTab === 'billing' && (
           <div className="tab-content">
+
+            {/* ── Retainer Summary ───────────────────── */}
+            {retainerSummary && retainerSummary.retainer_amount > 0 && (
+              <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, fontWeight: 700, color: '#0369a1', fontSize: '0.95rem' }}>Retainer Account</h4>
+                  <button
+                    className="btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '3px 10px' }}
+                    onClick={async () => {
+                      const r = await billingApi.retainerStatement(Number(id))
+                      const url = URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }))
+                      const a = document.createElement('a'); a.href = url; a.download = `retainer-statement-case-${id}.csv`; a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                  >Export Statement</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                  <div style={{ textAlign: 'center', background: '#fff', borderRadius: 8, padding: '0.6rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 3 }}>Starting Retainer</div>
+                    <div style={{ fontWeight: 700, color: '#0369a1' }}>₱{Number(retainerSummary.retainer_amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', background: '#fff', borderRadius: 8, padding: '0.6rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 3 }}>Total Deducted</div>
+                    <div style={{ fontWeight: 700, color: '#dc2626' }}>₱{Number(retainerSummary.total_deducted).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+                  </div>
+                  <div style={{ textAlign: 'center', background: '#fff', borderRadius: 8, padding: '0.6rem' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginBottom: 3 }}>Remaining Balance</div>
+                    <div style={{ fontWeight: 700, color: retainerSummary.remaining_balance < 0 ? '#dc2626' : retainerSummary.remaining_balance < retainerSummary.retainer_amount * 0.2 ? '#d97706' : '#16a34a' }}>
+                      ₱{Number(retainerSummary.remaining_balance).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+                {retainerSummary.remaining_balance < retainerSummary.retainer_amount * 0.2 && retainerSummary.retainer_amount > 0 && (
+                  <div style={{ marginTop: '0.6rem', fontSize: '0.82rem', color: '#b45309', background: '#fef3c7', borderRadius: 6, padding: '0.4rem 0.75rem' }}>
+                    ⚠ Retainer balance is below 20% of starting amount. Consider requesting replenishment.
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <div>
                 <strong>Total Billed: </strong>
@@ -1228,6 +1441,38 @@ export default function CaseDetail() {
                               <CheckCircle size={13} />
                             </button>
                           )}
+                          {(b.entry_type === 'expense' || b.entry_type === 'court_fee' || b.entry_type === 'filing_fee') && (
+                            b.receipt_path ? (
+                              <a
+                                href={`/uploads/${b.receipt_path}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn-small"
+                                style={{ color: '#2563eb', textDecoration: 'none' }}
+                                title="View Receipt"
+                              >
+                                <FileText size={12} />
+                              </a>
+                            ) : (user?.role === 'attorney' || user?.role === 'secretary') ? (
+                              <label title="Attach Receipt" style={{ cursor: 'pointer' }}>
+                                <input
+                                  type="file"
+                                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                                  style={{ display: 'none' }}
+                                  onChange={async e => {
+                                    const file = e.target.files?.[0]
+                                    if (!file) return
+                                    try {
+                                      await billingApi.uploadReceipt(Number(id), b.id, file)
+                                      refreshBilling()
+                                    } catch { alert('Upload failed.') }
+                                    e.target.value = ''
+                                  }}
+                                />
+                                <span className="btn-small" style={{ color: '#64748b' }}><Paperclip size={12} /></span>
+                              </label>
+                            ) : null
+                          )}
                           {user?.role === 'attorney' && (
                             <button className="btn-small btn-danger" onClick={() => handleDeleteBilling(b.id)}><Trash2 size={12} /></button>
                           )}
@@ -1246,22 +1491,12 @@ export default function CaseDetail() {
             <InvoiceManager
               caseId={Number(id)}
               billingEntries={billingEntries}
-              onRefreshBilling={() => billingApi.list(Number(id)).then(r => {
-                const entries = r.data.data ?? []
-                setBillingEntries(entries)
-                setBillingTotal(entries.reduce((s: number, e: any) => s + Number(e.amount), 0))
-              })}
+              onRefreshBilling={() => refreshBilling()}
             />
 
             {/* ── Time Tracking ───────────────────────── */}
             {(user?.role === 'attorney' || user?.role === 'secretary') && (
-              <TimeTracker caseId={Number(id)} onBillingCreated={() =>
-                billingApi.list(Number(id)).then(r => {
-                  const entries = r.data.data ?? []
-                  setBillingEntries(entries)
-                  setBillingTotal(entries.reduce((s: number, e: any) => s + Number(e.amount), 0))
-                })
-              } />
+              <TimeTracker caseId={Number(id)} onBillingCreated={() => refreshBilling()} />
             )}
           </div>
         )}
@@ -1333,6 +1568,185 @@ export default function CaseDetail() {
         )}
 
         {/* ═══ Tab: Co-Counsel ══════════════════════════════════════ */}
+        {/* ═══ Tab: Tasks ══════════════════════════════════════════ */}
+        {activeTab === 'tasks' && (
+          <div className="tab-content">
+            {(user?.role === 'attorney' || user?.role === 'secretary') && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                <button className="btn-primary" style={{ fontSize: '0.82rem' }} onClick={() => setShowTaskForm(f => !f)}>
+                  <Plus size={14} /> Add Task
+                </button>
+              </div>
+            )}
+            {showTaskForm && (
+              <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
+                <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>New Task</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+                    <label>Title *</label>
+                    <input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" />
+                  </div>
+                  <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+                    <label>Description</label>
+                    <textarea value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Optional details" style={{ resize: 'vertical' }} />
+                  </div>
+                  <div className="field-group">
+                    <label>Due Date</label>
+                    <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} />
+                  </div>
+                  <div className="field-group">
+                    <label>Priority</label>
+                    <select value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
+                      {['low','normal','high','critical'].map(p => (
+                        <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                  <button className="btn-secondary" onClick={() => setShowTaskForm(false)} disabled={taskSaving}><X size={13} /> Cancel</button>
+                  <button className="btn-primary" disabled={taskSaving || !taskForm.title.trim()} onClick={async () => {
+                    setTaskSaving(true)
+                    try {
+                      await tasksApi.create(Number(id), { ...taskForm, assigned_to: taskForm.assigned_to ? Number(taskForm.assigned_to) : undefined })
+                      setTaskForm({ title: '', description: '', due_date: '', priority: 'normal', assigned_to: '' })
+                      setShowTaskForm(false)
+                      const r = await tasksApi.list(Number(id))
+                      setTasks(r.data.data ?? [])
+                    } catch {}
+                    setTaskSaving(false)
+                  }}>
+                    <CheckCircle2 size={13} /> {taskSaving ? 'Saving…' : 'Save Task'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {tasks.length === 0 ? (
+              <div className="empty-state"><CheckCircle size={36} className="empty-icon" /><p>No tasks yet.</p></div>
+            ) : (
+              <div className="parties-list">
+                {tasks.map((t: any) => (
+                  <div key={t.id} className="party-card" style={{ opacity: t.status === 'done' || t.status === 'cancelled' ? 0.55 : 1 }}>
+                    <div className="party-card-header">
+                      <div style={{ flex: 1 }}>
+                        <span className="party-name" style={{ textDecoration: t.status === 'done' ? 'line-through' : undefined }}>{t.title}</span>
+                        <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '2px 7px', borderRadius: 999, fontWeight: 600,
+                          background: t.priority === 'critical' ? '#dc2626' : t.priority === 'high' ? '#f59e0b' : t.priority === 'low' ? '#6b7280' : '#3b82f6',
+                          color: '#fff' }}>{t.priority}</span>
+                        <span style={{ marginLeft: 6, fontSize: '0.72rem', padding: '2px 7px', borderRadius: 999, fontWeight: 600,
+                          background: t.status === 'done' ? '#22c55e' : t.status === 'in_progress' ? '#8b5cf6' : t.status === 'cancelled' ? '#6b7280' : 'var(--bg-card)',
+                          color: t.status === 'done' || t.status === 'in_progress' ? '#fff' : 'var(--text-muted)',
+                          border: '1px solid var(--border)' }}>{t.status.replace(/_/g,' ')}</span>
+                        {t.due_date && (
+                          <div className="note-date" style={{ marginTop: 2, color: new Date(t.due_date) < new Date() && t.status !== 'done' ? '#dc2626' : 'var(--text-muted)' }}>
+                            Due: {new Date(t.due_date).toLocaleDateString('en-PH')}
+                          </div>
+                        )}
+                        {t.assignee_name && <div className="note-date">Assigned to: {t.assignee_name}</div>}
+                        {t.completed_by_name && <div className="note-date">Completed by: {t.completed_by_name}</div>}
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        {t.status !== 'done' && t.status !== 'cancelled' && (user?.role === 'attorney' || user?.role === 'secretary') && (
+                          <button className="btn-small" style={{ color: '#22c55e', borderColor: '#22c55e' }} onClick={async () => {
+                            await tasksApi.complete(Number(id), t.id)
+                            const r = await tasksApi.list(Number(id))
+                            setTasks(r.data.data ?? [])
+                          }}><CheckCircle2 size={14} /></button>
+                        )}
+                        {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                          <button className="btn-small btn-danger" onClick={async () => {
+                            await tasksApi.delete(Number(id), t.id)
+                            setTasks(prev => prev.filter((x: any) => x.id !== t.id))
+                          }}><Trash2 size={12} /></button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Stages Tab ──────────────────────────────────────────────── */}
+        {activeTab === 'stages' && (
+          <div className="tab-content">
+            {stages.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2.5rem 1rem' }}>
+                <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>No case progress stages set up yet.</p>
+                {(user?.role === 'attorney' || user?.role === 'secretary') && data && (
+                  <button
+                    className="btn-primary"
+                    disabled={initializingStages}
+                    onClick={async () => {
+                      setInitializingStages(true)
+                      try {
+                        const r = await stagesApi.init(Number(id), data.case_type || 'civil')
+                        setStages(r.data.data ?? [])
+                        setStagesLoaded(true)
+                      } catch (e: any) {
+                        alert(e?.response?.data?.message || 'Failed to initialize stages.')
+                      } finally { setInitializingStages(false) }
+                    }}
+                  >
+                    {initializingStages ? 'Initializing…' : `Initialize Stages (${data.case_type || 'civil'})`}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ position: 'relative', paddingLeft: '2rem' }}>
+                {/* Vertical line */}
+                <div style={{ position: 'absolute', left: '0.6rem', top: 8, bottom: 8, width: 2, background: 'var(--border)' }} />
+                {stages.map((stage, idx) => {
+                  const isCurrent = stage.is_current === 1
+                  const isDone    = stage.completed === 1
+                  const dotColor  = isDone ? '#22c55e' : isCurrent ? 'var(--accent)' : 'var(--border)'
+                  return (
+                    <div key={stage.id} style={{ position: 'relative', marginBottom: '1.25rem', paddingLeft: '1rem' }}>
+                      {/* Dot */}
+                      <div style={{
+                        position: 'absolute', left: '-1.58rem', top: 6,
+                        width: 14, height: 14, borderRadius: '50%',
+                        background: dotColor, border: `2px solid ${dotColor}`,
+                        zIndex: 1, flexShrink: 0,
+                      }} />
+                      <div className="card" style={{ padding: '0.75rem 1rem', borderLeft: isCurrent ? '3px solid var(--accent)' : '3px solid transparent' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{stage.stage_name}</span>
+                            {isCurrent && <span style={{ marginLeft: 8, background: 'var(--accent)', color: '#fff', borderRadius: 999, fontSize: '0.68rem', padding: '1px 7px', fontWeight: 600 }}>Current</span>}
+                            {isDone && <span style={{ marginLeft: 8, color: '#22c55e', fontSize: '0.75rem' }}>✓ Completed {stage.completed_at ? new Date(stage.completed_at).toLocaleDateString() : ''}</span>}
+                          </div>
+                          {isCurrent && (user?.role === 'attorney' || user?.role === 'secretary') && (
+                            <button
+                              className="btn-primary"
+                              style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem' }}
+                              disabled={stageAdvancing === stage.id}
+                              onClick={async () => {
+                                setStageAdvancing(stage.id)
+                                try {
+                                  const r = await stagesApi.advance(Number(id), stage.id)
+                                  setStages(r.data.data ?? [])
+                                } catch (e: any) {
+                                  alert(e?.response?.data?.message || 'Failed to advance stage.')
+                                } finally { setStageAdvancing(null) }
+                              }}
+                            >
+                              {stageAdvancing === stage.id ? 'Advancing…' : 'Mark Complete & Advance'}
+                            </button>
+                          )}
+                        </div>
+                        {stage.notes && <p style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{stage.notes}</p>}
+                        {stage.completed_by_name && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>By: {stage.completed_by_name}</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'cocounsel' && (
           <div className="tab-content">
             {user?.role === 'attorney' && (

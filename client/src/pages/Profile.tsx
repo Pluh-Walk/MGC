@@ -102,6 +102,21 @@ export default function Profile() {
   const [pwSaving, setPwSaving] = useState(false)
   const [pwMsg, setPwMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
+  // ── Notification preferences ──────────────────────────
+  const NOTIF_FIELDS = [
+    { key: 'new_message',       label: 'New message received' },
+    { key: 'case_update',       label: 'Case status updates' },
+    { key: 'hearing_reminder',  label: 'Hearing reminders' },
+    { key: 'deadline_reminder', label: 'Deadline reminders' },
+    { key: 'document_uploaded', label: 'Document uploaded' },
+    { key: 'announcement',      label: 'Announcements' },
+    { key: 'invoice_sent',      label: 'Invoice sent / paid' },
+    { key: 'task_assigned',     label: 'Task assigned to me' },
+  ] as const
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, string>>({})
+  const [notifSaving, setNotifSaving] = useState(false)
+  const [notifMsg, setNotifMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
   const isAttorney = user?.role === 'attorney'
   const isSecretary = user?.role === 'secretary'
 
@@ -142,6 +157,9 @@ export default function Profile() {
   }, [isAttorney])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    profileApi.getNotificationPrefs().then(r => setNotifPrefs(r.data.data ?? {})).catch(() => {})
+  }, [])
   useEffect(() => {
     if (!isAttorney) return
     profileApi.stats().then(r => setStats(r.data.data)).catch(() => {})
@@ -255,6 +273,52 @@ export default function Profile() {
       setPwMsg({ text: err.response?.data?.message || 'Failed to change password.', ok: false })
     } finally { setPwSaving(false) }
   }
+
+  const handleNotifSave = async () => {
+    setNotifSaving(true)
+    setNotifMsg(null)
+    try {
+      await profileApi.updateNotificationPrefs(notifPrefs)
+      setNotifMsg({ text: 'Notification preferences saved.', ok: true })
+    } catch {
+      setNotifMsg({ text: 'Failed to save preferences.', ok: false })
+    } finally { setNotifSaving(false) }
+  }
+
+  // ── Notification preferences panel (reused across all role tabs) ──
+  const NotifPrefsPanel = () => (
+    <div className="atty-security-section">
+      <h4><Bell size={15} style={{ marginRight: 6, verticalAlign: 'middle' }} />Notification Preferences</h4>
+      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+        Control how you receive notifications for each event type.
+      </p>
+      {notifMsg && (
+        <div className={`alert ${notifMsg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginBottom: '0.75rem' }}>
+          {notifMsg.ok ? <CheckCircle2 size={14}/> : <AlertCircle size={14}/>} {notifMsg.text}
+        </div>
+      )}
+      <div style={{ display: 'grid', gap: '0.5rem' }}>
+        {NOTIF_FIELDS.map(({ key, label }) => (
+          <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: 8, background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '0.875rem' }}>{label}</span>
+            <select
+              value={notifPrefs[key] ?? 'both'}
+              onChange={e => setNotifPrefs(p => ({ ...p, [key]: e.target.value }))}
+              style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--background)', color: 'var(--text)' }}
+            >
+              <option value="both">App + Email</option>
+              <option value="app">App only</option>
+              <option value="email">Email only</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+        ))}
+      </div>
+      <button className="btn-primary" style={{ marginTop: '0.75rem' }} onClick={handleNotifSave} disabled={notifSaving}>
+        {notifSaving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Save Preferences</>}
+      </button>
+    </div>
+  )
 
   const initials = (user?.fullname || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
   const availInfo = AVAIL_OPTIONS.find(a => a.value === avail)!
@@ -440,6 +504,7 @@ export default function Profile() {
                       {pwSaving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Update Password</>}
                     </button>
                   </div>
+                  <NotifPrefsPanel />
                   <div className="atty-security-info">
                     <h4>Account Info</h4>
                     <div className="security-info-row"><span>Account created:</span><span>{profile ? new Date(profile.created_at).toLocaleDateString() : '—'}</span></div>
@@ -840,33 +905,7 @@ export default function Profile() {
                   </div>
 
                   {/* Communication Preferences */}
-                  <div className="atty-security-info">
-                    <h4>Communication Preferences</h4>
-                    {([
-                      { key: 'email'        as const, icon: <Mail size={14}/>,         label: 'Email Notifications',  desc: 'Receive system alerts via email' },
-                      { key: 'case_updates' as const, icon: <Briefcase size={14}/>,    label: 'Case Update Alerts',   desc: 'Notified when your case status changes' },
-                      { key: 'hearings'     as const, icon: <Calendar size={14}/>,     label: 'Hearing Reminders',    desc: 'Reminders before scheduled hearings' },
-                      { key: 'messages'     as const, icon: <MessageSquare size={14}/>,label: 'Message Notifications',desc: 'Alert when attorney sends a message' },
-                    ]).map(({ key, icon, label, desc }) => (
-                      <div key={key} className="notif-toggle-row">
-                        <div className="notif-toggle-info">
-                          <div className="notif-toggle-label">{icon} {label}</div>
-                          <small>{desc}</small>
-                        </div>
-                        <button
-                          className={`toggle-switch${notifs[key] ? ' on' : ''}`}
-                          onClick={() => setNotifs(n => ({ ...n, [key]: !n[key] }))}
-                          role="switch"
-                          aria-checked={notifs[key]}
-                        >
-                          <span className="toggle-thumb" />
-                        </button>
-                      </div>
-                    ))}
-                    <button className="btn-primary" style={{ marginTop: '1rem' }} onClick={handleSave} disabled={saving}>
-                      {saving ? <><Loader2 size={14} className="spin"/> Saving…</> : <><Save size={14}/> Save Preferences</>}
-                    </button>
-                  </div>
+                  <NotifPrefsPanel />
 
                   {/* Account Info */}
                   <div className="atty-security-info" style={{ marginTop: '1.5rem' }}>
@@ -1265,6 +1304,8 @@ export default function Profile() {
                   <h4>Two-Factor Authentication</h4>
                   <TwoFactorSetup role={user?.role || ''} />
                 </div>
+
+                <NotifPrefsPanel />
 
                 <div className="atty-security-info">
                   <h4>Account Info</h4>

@@ -12,6 +12,9 @@ import {
   clearRefreshCookie,
 } from '../utils/authTokens'
 import { generateAndStoreBackupCodes } from './twoFactorController'
+import { sendMail } from '../config/mailer'
+import { newLoginDeviceEmail } from '../templates/emailTemplates'
+import { setCsrfCookie } from '../middleware/csrf'
 
 // ─── helpers ───────────────────────────────────────────────
 
@@ -112,9 +115,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // ── hash
     const hashed = await bcrypt.hash(password, 12)
 
-    // ── insert
+    // ── insert (consent_at records RA 10173 / Data Privacy Act compliance timestamp)
     const [result] = await pool.execute<ResultSetHeader>(
-      'INSERT INTO users (fullname, username, email, password, role) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO users (fullname, username, email, password, role, consent_at) VALUES (?, ?, ?, ?, ?, NOW())',
       [cleanName, cleanUsername, cleanEmail, hashed, role]
     )
 
@@ -259,6 +262,29 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await issueRefreshToken(user.id, req, res)
 
     await audit(req, 'USER_LOGIN', 'user', user.id)
+
+    // ── New device / IP detection ─────────────────────────────────────────
+    // Check if this IP + user-agent combination has been seen in the last 30 days.
+    const ua = (req.headers['user-agent'] || '').slice(0, 500)
+    const ipHash = crypto.createHash('sha256').update(ip + ua).digest('hex')
+    const [[knownDevice]] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM refresh_tokens
+       WHERE user_id = ? AND ip_address = ? AND user_agent = ?
+         AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+       LIMIT 1`,
+      [user.id, ip, ua]
+    )
+    if (!knownDevice && user.email && process.env.SMTP_USER) {
+      const _origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+      const timestamp = new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
+      sendMail(
+        user.email,
+        'New Sign-In Detected — MGC Law System',
+        newLoginDeviceEmail(user.fullname, ip, ua || 'Unknown', timestamp, `${_origin}/profile`)
+      ).catch(() => { /* non-fatal */ })
+    }
+
+    setCsrfCookie(res)
 
     res.json({
       success: true,
@@ -511,6 +537,8 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
     const accessToken = signAccessToken(payload)
     await issueRefreshToken(user.id, req, res)
 
+    setCsrfCookie(res)
+
     res.json({ success: true, token: accessToken })
   } catch (err) {
     console.error('[refreshToken]', err)
@@ -625,6 +653,8 @@ export const verify2FA = async (req: Request, res: Response): Promise<void> => {
     await issueRefreshToken(user.id, req, res)
 
     await audit(req, 'USER_LOGIN_2FA', 'user', user.id)
+
+    setCsrfCookie(res)
 
     res.json({
       success: true,

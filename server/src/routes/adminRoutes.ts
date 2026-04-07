@@ -16,11 +16,15 @@ import {
   getDashboardStats,
   getUserReport,
   getCaseReport,
+  getFinancialReport,
+  getWorkloadReport,
+  impersonateUser,
+  endImpersonation,
   getSuspensionHistory,
   getUserLoginAttempts,
   resetUser2FA,
 } from '../controllers/adminController'
-import { dsarExport, eraseUserData } from '../controllers/privacyController'
+import { dsarExport, eraseUserData, getPrivacyNotice } from '../controllers/privacyController'
 import { authMiddleware, requireRole } from '../middleware/auth'
 
 const router = Router()
@@ -43,6 +47,8 @@ router.delete('/users/:id',           deleteUser)
 router.get('/users/:id/suspensions',  getSuspensionHistory)
 router.get('/users/:id/login-attempts', getUserLoginAttempts)
 router.post('/users/:id/reset-2fa',    resetUser2FA)
+router.post('/users/:id/impersonate',  impersonateUser)
+router.post('/impersonation/:logId/end', endImpersonation)
 
 // Verification
 router.get('/verifications',          getVerificationQueue)
@@ -56,8 +62,11 @@ router.put('/cases/:id/archive',      forceArchiveCase)
 // Reports
 router.get('/reports/users',          getUserReport)
 router.get('/reports/cases',          getCaseReport)
+router.get('/reports/financial',      getFinancialReport)
+router.get('/reports/workload',        getWorkloadReport)
 
 // Data Privacy (RA 10173)
+router.get('/privacy/notice',          getPrivacyNotice)
 router.get('/privacy/dsar/:userId',   dsarExport)
 router.post('/privacy/erase/:userId', eraseUserData)
 

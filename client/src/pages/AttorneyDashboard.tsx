@@ -8,6 +8,7 @@ import {
   Scale, FileText, Users, Calendar, MessageSquare, Briefcase, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
   Trash2, Clock, MapPin, ChevronRight, AlertTriangle, CalendarClock, Check, CheckCheck,
+  FolderOpen, BarChart3,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
@@ -344,6 +345,12 @@ export default function AttorneyDashboard() {
             </button>
             <button className="sidebar-btn" onClick={() => navigate('/announcements')}>
               <Megaphone size={17} /> Announcements
+            </button>
+            <button className="sidebar-btn" onClick={() => navigate('/templates')}>
+              <FolderOpen size={17} /> Templates
+            </button>
+            <button className="sidebar-btn" onClick={() => navigate('/reports')}>
+              <BarChart3 size={17} /> My Reports
             </button>
           </nav>
 

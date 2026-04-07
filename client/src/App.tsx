@@ -31,13 +31,17 @@ import AdminAuditLogs from './pages/AdminAuditLogs'
 import AdminSettings from './pages/AdminSettings'
 import AdminReports from './pages/AdminReports'
 import AdminAnnouncements from './pages/AdminAnnouncements'
+import Templates from './pages/Templates'
+import AttorneyReports from './pages/AttorneyReports'
 import MaintenanceBanner from './components/MaintenanceBanner'
 import GlobalSearch from './components/GlobalSearch'
+import ImpersonationBanner from './components/ImpersonationBanner'
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <ImpersonationBanner />
         <MaintenanceBanner />
         <GlobalSearch globalOnly />
         <Routes>
@@ -185,6 +189,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['attorney', 'client', 'secretary']}>
                 <Messages />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute allowedRoles={['attorney']}>
+                <AttorneyReports />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/templates"
+            element={
+              <ProtectedRoute allowedRoles={['attorney', 'secretary', 'admin']}>
+                <Templates />
               </ProtectedRoute>
             }
           />

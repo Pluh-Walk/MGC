@@ -314,6 +314,19 @@ export default function InvoiceManager({ caseId, billingEntries, onRefreshBillin
                           </button>
                         )}
 
+                        {/* Download Receipt (paid invoices only) */}
+                        {inv.status === 'paid' && (
+                          <a
+                            href={invoiceApi.receiptUrl(caseId, inv.id)}
+                            download={`receipt_${inv.invoice_number}.pdf`}
+                            className="btn-small"
+                            title="Download Receipt"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}
+                          >
+                            <Download size={13} /> Receipt
+                          </a>
+                        )}
+
                         {isAtty && inv.status !== 'paid' && inv.status !== 'void' && (
                           <button className="btn-small btn-danger" title="Void invoice"
                             onClick={() => handleVoid(inv)}

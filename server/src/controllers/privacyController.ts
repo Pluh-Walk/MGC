@@ -24,7 +24,7 @@ export const dsarExport = async (req: Request, res: Response): Promise<void> => 
 
   try {
     const [[user]] = await pool.query<RowDataPacket[]>(
-      `SELECT id, fullname, username, email, role, status, created_at, last_login
+      `SELECT id, fullname, username, email, role, status, created_at, last_login, consent_at
        FROM users WHERE id = ?`,
       [userId]
     )
@@ -173,4 +173,36 @@ export const eraseUserData = async (req: Request, res: Response): Promise<void> 
   } finally {
     conn.release()
   }
+}
+
+// ─── GET /api/admin/privacy/notice — Privacy Notice text ─────────────
+export const getPrivacyNotice = (_req: Request, res: Response): void => {
+  res.json({
+    success: true,
+    data: {
+      title: 'MGC Law System Privacy Notice',
+      law: 'Republic Act No. 10173 – Data Privacy Act of 2012',
+      effective_date: '2024-01-01',
+      controller: 'MGC Law Offices',
+      purpose: [
+        'Administration and management of attorney-client case matters',
+        'Scheduling and notification of hearings and deadlines',
+        'Billing and invoice processing',
+        'Communication between attorneys, clients, and staff',
+        'Compliance with applicable laws and legal proceedings',
+      ],
+      retention: 'Personal data is retained for the duration of the attorney-client relationship and for the legally required period thereafter.',
+      rights: [
+        'Right to be informed',
+        'Right to access',
+        'Right to object',
+        'Right to erasure or blocking',
+        'Right to rectify',
+        'Right to file a complaint',
+        'Right to data portability',
+        'Right to damages',
+      ],
+      contact: process.env.PRIVACY_CONTACT_EMAIL || process.env.SMTP_USER || 'admin@mgclaw.ph',
+    },
+  })
 }
