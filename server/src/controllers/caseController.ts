@@ -10,6 +10,7 @@ import {
   caseClosedEmail,
 } from '../templates/emailTemplates'
 import { getCaseScope, getEffectiveAttorneyId } from '../utils/scope'
+import { triggerSurveyForCase } from './surveyController'
 
 // ─── Create Case ────────────────────────────────────────────
 export const createCase = async (req: Request, res: Response): Promise<void> => {
@@ -481,6 +482,11 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
     }
 
     await audit(req, 'CASE_UPDATED', 'case', Number(id))
+
+    // Trigger satisfaction survey when case is first closed
+    if (newStatus === 'closed' && oldStatus !== 'closed' && existing[0].client_id) {
+      await triggerSurveyForCase(Number(id), existing[0].client_id, outcome ?? null, req)
+    }
 
     res.json({ success: true, message: 'Case updated.' })
   } catch (err: any) {

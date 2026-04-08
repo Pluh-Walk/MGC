@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
-import { Settings, UserCircle, LogOut } from 'lucide-react'
+import { Settings, UserCircle, LogOut, Sun, Moon, Keyboard } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import UserAvatar from './UserAvatar'
+import { toggleTheme } from '../App'
 
 export default function SettingsDropdown() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [isLight, setIsLight] = useState(() =>
+    document.documentElement.classList.contains('light-mode')
+  )
   const ref = useRef<HTMLDivElement>(null)
 
   // close on outside click
@@ -18,6 +22,11 @@ export default function SettingsDropdown() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  const handleThemeToggle = () => {
+    toggleTheme()
+    setIsLight(document.documentElement.classList.contains('light-mode'))
+  }
 
   return (
     <div className="settings-wrapper" ref={ref}>
@@ -53,6 +62,26 @@ export default function SettingsDropdown() {
           >
             <UserCircle size={15} />
             View Profile
+          </button>
+
+          <button
+            className="settings-dropdown-item"
+            onClick={handleThemeToggle}
+          >
+            {isLight ? <Moon size={15} /> : <Sun size={15} />}
+            {isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+          </button>
+
+          <button
+            className="settings-dropdown-item"
+            onClick={() => {
+              setOpen(false)
+              // Dispatch '?' keydown to show shortcut help
+              window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
+            }}
+          >
+            <Keyboard size={15} />
+            Keyboard Shortcuts
           </button>
 
           <div className="settings-dropdown-divider" />

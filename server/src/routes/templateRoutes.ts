@@ -3,7 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import sanitizeFilename from 'sanitize-filename'
-import { requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole } from '../middleware/auth'
 import {
   listTemplates, uploadTemplate, downloadTemplate,
   updateTemplate, deleteTemplate,
@@ -45,6 +45,8 @@ const templateUpload = multer({
 })
 
 // ─── Routes ──────────────────────────────────────────────────────
+router.use(authMiddleware)
+
 router.get(
   '/',
   requireRole('attorney', 'secretary', 'admin'),

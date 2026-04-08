@@ -4,7 +4,8 @@ import pool from '../config/db'
 import path from 'path'
 import fs from 'fs'
 import archiver from 'archiver'
-import pdfParse from 'pdf-parse'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>
 import { notify } from '../utils/notify'
 import { notifyWithEmail } from '../utils/emailNotify'
 import { audit } from '../utils/audit'

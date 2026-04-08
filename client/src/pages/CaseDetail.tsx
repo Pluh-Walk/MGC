@@ -11,7 +11,7 @@ import InvoiceManager from '../components/InvoiceManager'
 import TimeTracker from '../components/TimeTracker'
 import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tagsApi, tasksApi, stagesApi } from '../services/api'
 
-type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel' | 'tasks' | 'stages'
+type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel' | 'tasks' | 'stages' | 'invoices'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:    '#a78bfa',
@@ -109,6 +109,11 @@ export default function CaseDetail() {
   const [showRelationForm, setShowRelationForm] = useState(false)
   const [relationSaving, setRelationSaving] = useState(false)
   const [relationForm, setRelationForm] = useState({ related_case_id: '', relation_type: 'related_matter', notes: '' })
+  const [relationError, setRelationError] = useState('')
+  const [caseSearch, setCaseSearch] = useState('')
+  const [caseSearchResults, setCaseSearchResults] = useState<any[]>([])
+  const [caseSearchLoading, setCaseSearchLoading] = useState(false)
+  const [selectedRelatedCase, setSelectedRelatedCase] = useState<{ id: number; case_number: string; title: string } | null>(null)
 
   // Co-counsel state
   const [cocounsel, setCocounsel] = useState<any[]>([])
@@ -121,6 +126,9 @@ export default function CaseDetail() {
   const [caseTags, setCaseTags] = useState<any[]>([])
   const [allTags, setAllTags] = useState<any[]>([])
   const [showTagPicker, setShowTagPicker] = useState(false)
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagColor, setNewTagColor] = useState('#6366f1')
+  const [creatingTag, setCreatingTag] = useState(false)
 
   // Document versioning state
   const [expandedDocId, setExpandedDocId] = useState<number | null>(null)
@@ -259,11 +267,23 @@ export default function CaseDetail() {
     if (!billingForm.description.trim() || !billingForm.amount) return
     setBillingSaving(true)
     try {
-      await billingApi.add(Number(id), { ...billingForm, amount: Number(billingForm.amount), hours: billingForm.hours ? Number(billingForm.hours) : null, rate: billingForm.rate ? Number(billingForm.rate) : null })
+      await billingApi.add(Number(id), {
+        entry_type:     billingForm.entry_type,
+        description:    billingForm.description,
+        amount:         Number(billingForm.amount),
+        hours:          billingForm.hours ? Number(billingForm.hours) : null,
+        rate:           billingForm.rate ? Number(billingForm.rate) : null,
+        billing_date:   billingForm.billing_date || undefined,
+        is_billed:      billingForm.is_billed,
+        invoice_number: billingForm.invoice_number || undefined,
+        notes:          billingForm.notes || undefined,
+      })
       setShowBillingForm(false)
       setBillingForm({ entry_type: 'flat_fee', description: '', hours: '', rate: '', amount: '', billing_date: '', is_billed: false, invoice_number: '', notes: '' })
       refreshBilling()
-    } catch {} finally { setBillingSaving(false) }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to add billing entry.')
+    } finally { setBillingSaving(false) }
   }
 
   const handleDeleteBilling = async (entryId: number) => {
@@ -278,15 +298,32 @@ export default function CaseDetail() {
   }
 
   // ─── Relations handlers ───────────────────────────────────
-  const handleAddRelation = async () => {
-    if (!relationForm.related_case_id) return
-    setRelationSaving(true)
+  const handleCaseSearch = async (q: string) => {
+    setCaseSearch(q)
+    if (!q.trim()) { setCaseSearchResults([]); return }
+    setCaseSearchLoading(true)
     try {
-      await relationsApi.add(Number(id), { related_case_id: Number(relationForm.related_case_id), relation_type: relationForm.relation_type, notes: relationForm.notes || undefined })
+      const r = await casesApi.list({ search: q })
+      const results = (r.data.data || r.data.cases || []).filter((c: any) => c.id !== Number(id))
+      setCaseSearchResults(results)
+    } catch { setCaseSearchResults([]) } finally { setCaseSearchLoading(false) }
+  }
+
+  const handleAddRelation = async () => {
+    if (!selectedRelatedCase) return
+    setRelationSaving(true)
+    setRelationError('')
+    try {
+      await relationsApi.add(Number(id), { related_case_id: selectedRelatedCase.id, relation_type: relationForm.relation_type, notes: relationForm.notes || undefined })
       setShowRelationForm(false)
       setRelationForm({ related_case_id: '', relation_type: 'related_matter', notes: '' })
+      setSelectedRelatedCase(null)
+      setCaseSearch('')
+      setCaseSearchResults([])
       relationsApi.list(Number(id)).then(r => setRelations(r.data.data))
-    } catch {} finally { setRelationSaving(false) }
+    } catch (err: any) {
+      setRelationError(err?.response?.data?.message || 'Failed to link case.')
+    } finally { setRelationSaving(false) }
   }
 
   const handleDeleteRelation = async (relId: number) => {
@@ -321,9 +358,13 @@ export default function CaseDetail() {
 
   // ─── Tag handlers ─────────────────────────────────────────
   const loadTags = async () => {
-    const [caseTagsRes, allTagsRes] = await Promise.all([tagsApi.getCaseTags(Number(id)), tagsApi.listAll()])
-    setCaseTags(caseTagsRes.data.data)
-    setAllTags(allTagsRes.data.data)
+    try {
+      const [caseTagsRes, allTagsRes] = await Promise.all([tagsApi.getCaseTags(Number(id)), tagsApi.listAll()])
+      setCaseTags(caseTagsRes.data.data)
+      setAllTags(allTagsRes.data.data)
+    } catch (err) {
+      console.error('loadTags:', err)
+    }
   }
 
   const handleAssignTag = async (tagId: number) => {
@@ -334,6 +375,23 @@ export default function CaseDetail() {
   const handleRemoveTag = async (tagId: number) => {
     await tagsApi.remove(Number(id), tagId)
     loadTags()
+  }
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim()
+    if (!name) return
+    setCreatingTag(true)
+    try {
+      await tagsApi.create({ name, color: newTagColor })
+      setNewTagName('')
+      setNewTagColor('#6366f1')
+      await loadTags()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to create tag.'
+      alert(msg)
+    } finally {
+      setCreatingTag(false)
+    }
   }
 
   const openEdit = () => {
@@ -602,6 +660,12 @@ export default function CaseDetail() {
           <button className={`tab-btn${activeTab === 'stages' ? ' active' : ''}`} onClick={() => setActiveTab('stages')}>
             Progress
           </button>
+          {/* Invoices tab — visible to clients */}
+          {user?.role === 'client' && (
+            <button className={`tab-btn${activeTab === 'invoices' ? ' active' : ''}`} onClick={() => setActiveTab('invoices')}>
+              <FileText size={14} /> Invoices
+            </button>
+          )}
           {/* Attorney-only extra tabs */}
           {(user?.role === 'attorney' || user?.role === 'secretary') && (
             <>
@@ -642,13 +706,40 @@ export default function CaseDetail() {
               {caseTags.length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No tags assigned.</span>}
             </div>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>Add tag:</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.6rem' }}>
               {allTags.filter(t => !caseTags.find((ct: any) => ct.id === t.id)).map((t: any) => (
                 <button key={t.id} onClick={() => handleAssignTag(t.id)} style={{ background: t.color + '22', color: t.color, border: `1px solid ${t.color}`, borderRadius: 20, padding: '0.15rem 0.6rem', fontSize: '0.8rem', cursor: 'pointer' }}>
                   + {t.name}
                 </button>
               ))}
               {allTags.filter(t => !caseTags.find((ct: any) => ct.id === t.id)).length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>All tags assigned.</span>}
+            </div>
+            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '0.6rem', marginTop: '0.2rem' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>Create new tag:</p>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateTag() }}
+                  placeholder="Tag name"
+                  maxLength={50}
+                  style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.8rem', border: '1px solid #e2e8f0', borderRadius: 6 }}
+                />
+                <input
+                  type="color"
+                  value={newTagColor}
+                  onChange={e => setNewTagColor(e.target.value)}
+                  title="Pick tag color"
+                  style={{ width: 28, height: 28, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer' }}
+                />
+                <button
+                  onClick={handleCreateTag}
+                  disabled={creatingTag || !newTagName.trim()}
+                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', borderRadius: 6, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', opacity: (creatingTag || !newTagName.trim()) ? 0.5 : 1 }}>
+                  {creatingTag ? '…' : 'Create'}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1305,6 +1396,13 @@ export default function CaseDetail() {
           </div>
         )}
 
+        {/* ═══ Tab: Invoices (client view) ══════════════════════ */}
+        {activeTab === 'invoices' && (
+          <div className="tab-content">
+            <InvoiceManager caseId={Number(id)} billingEntries={billingEntries} onRefreshBilling={refreshBilling} />
+          </div>
+        )}
+
         {/* ═══ Tab: Billing ═══════════════════════════════════════ */}
         {activeTab === 'billing' && (
           <div className="tab-content">
@@ -1368,7 +1466,15 @@ export default function CaseDetail() {
                 <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>New Billing Entry</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div className="field-group"><label>Entry Type</label>
-                    <select value={billingForm.entry_type} onChange={e => setBillingForm(f => ({ ...f, entry_type: e.target.value }))}>
+                    <select value={billingForm.entry_type} onChange={e => {
+                      const entry_type = e.target.value
+                      setBillingForm(f => ({
+                        ...f,
+                        entry_type,
+                        // clear auto-calculated amount if switching away from hourly
+                        amount: entry_type !== 'hourly' ? f.amount : (f.hours && f.rate ? String((parseFloat(f.hours) * parseFloat(f.rate)).toFixed(2)) : f.amount),
+                      }))
+                    }}>
                       {['hourly','flat_fee','court_fee','filing_fee','expense','retainer_deduction','other'].map(t => (
                         <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
                       ))}
@@ -1383,13 +1489,35 @@ export default function CaseDetail() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                   <div className="field-group"><label>Hours</label>
-                    <input type="number" min="0" step="0.25" value={billingForm.hours} onChange={e => setBillingForm(f => ({ ...f, hours: e.target.value }))} placeholder="Optional" />
+                    <input type="number" min="0" step="0.25" value={billingForm.hours}
+                      onChange={e => {
+                        const hours = e.target.value
+                        const auto = billingForm.entry_type === 'hourly' && hours && billingForm.rate
+                          ? String((parseFloat(hours) * parseFloat(billingForm.rate)).toFixed(2))
+                          : billingForm.amount
+                        setBillingForm(f => ({ ...f, hours, amount: auto }))
+                      }}
+                      placeholder="Optional" />
                   </div>
                   <div className="field-group"><label>Rate (₱/hr)</label>
-                    <input type="number" min="0" value={billingForm.rate} onChange={e => setBillingForm(f => ({ ...f, rate: e.target.value }))} placeholder="Optional" />
+                    <input type="number" min="0" value={billingForm.rate}
+                      onChange={e => {
+                        const rate = e.target.value
+                        const auto = billingForm.entry_type === 'hourly' && rate && billingForm.hours
+                          ? String((parseFloat(rate) * parseFloat(billingForm.hours)).toFixed(2))
+                          : billingForm.amount
+                        setBillingForm(f => ({ ...f, rate, amount: auto }))
+                      }}
+                      placeholder="Optional" />
                   </div>
-                  <div className="field-group"><label>Amount (₱) *</label>
-                    <input type="number" min="0" step="0.01" value={billingForm.amount} onChange={e => setBillingForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+                  <div className="field-group">
+                    <label>Amount (₱) *{billingForm.entry_type === 'hourly' && billingForm.hours && billingForm.rate && <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4, fontSize: '0.78rem' }}>(auto)</span>}</label>
+                    <input type="number" min="0" step="0.01" value={billingForm.amount}
+                      onChange={e => setBillingForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0.00"
+                      readOnly={billingForm.entry_type === 'hourly' && !!(billingForm.hours && billingForm.rate)}
+                      style={billingForm.entry_type === 'hourly' && !!(billingForm.hours && billingForm.rate) ? { background: '#f1f5f9', cursor: 'not-allowed' } : {}}
+                    />
                   </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -1514,10 +1642,49 @@ export default function CaseDetail() {
             {showRelationForm && (
               <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
                 <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Link Related Case</h4>
+                {relationError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '0.4rem 0.7rem', marginBottom: '0.6rem', color: '#dc2626', fontSize: '0.85rem' }}>
+                    {relationError}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="field-group"><label>Case ID *</label>
-                    <input type="number" placeholder="Enter case ID number" value={relationForm.related_case_id}
-                      onChange={e => setRelationForm(f => ({ ...f, related_case_id: e.target.value }))} />
+                  <div className="field-group" style={{ position: 'relative' }}>
+                    <label>Search Case *</label>
+                    {selectedRelatedCase ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.5rem', border: '1px solid #a3e635', borderRadius: 6, background: '#f7fee7', fontSize: '0.85rem' }}>
+                        <span style={{ fontWeight: 600, color: '#2563eb' }}>{selectedRelatedCase.case_number}</span>
+                        <span style={{ color: '#374151', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedRelatedCase.title}</span>
+                        <button onClick={() => { setSelectedRelatedCase(null); setCaseSearch(''); setCaseSearchResults([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 0 }}><X size={13} /></button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          placeholder="Search by case number or title…"
+                          value={caseSearch}
+                          onChange={e => handleCaseSearch(e.target.value)}
+                          autoComplete="off"
+                        />
+                        {caseSearch && (
+                          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+                            {caseSearchLoading && <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem', color: '#6b7280' }}>Searching…</div>}
+                            {!caseSearchLoading && caseSearchResults.length === 0 && <div style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem', color: '#6b7280' }}>No cases found.</div>}
+                            {caseSearchResults.map((c: any) => (
+                              <div key={c.id}
+                                onClick={() => { setSelectedRelatedCase({ id: c.id, case_number: c.case_number, title: c.title }); setCaseSearchResults([]); setCaseSearch('') }}
+                                style={{ padding: '0.45rem 0.75rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.83rem' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                                onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+                              >
+                                <span style={{ fontWeight: 600, color: '#2563eb', marginRight: 8 }}>{c.case_number}</span>
+                                <span style={{ color: '#374151' }}>{c.title}</span>
+                                <span style={{ marginLeft: 6, fontSize: '0.77rem', color: '#6b7280' }}>({c.status})</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="field-group"><label>Relation Type</label>
                     <select value={relationForm.relation_type} onChange={e => setRelationForm(f => ({ ...f, relation_type: e.target.value }))}>
@@ -1531,8 +1698,8 @@ export default function CaseDetail() {
                   <textarea rows={2} value={relationForm.notes} onChange={e => setRelationForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                  <button className="btn-secondary" onClick={() => setShowRelationForm(false)} disabled={relationSaving}><X size={13} /> Cancel</button>
-                  <button className="btn-primary" onClick={handleAddRelation} disabled={relationSaving || !relationForm.related_case_id}>
+                  <button className="btn-secondary" onClick={() => { setShowRelationForm(false); setRelationError(''); setSelectedRelatedCase(null); setCaseSearch(''); setCaseSearchResults([]) }} disabled={relationSaving}><X size={13} /> Cancel</button>
+                  <button className="btn-primary" onClick={handleAddRelation} disabled={relationSaving || !selectedRelatedCase}>
                     <CheckCircle2 size={13} /> {relationSaving ? 'Linking…' : 'Link Case'}
                   </button>
                 </div>
@@ -1697,7 +1864,7 @@ export default function CaseDetail() {
               <div style={{ position: 'relative', paddingLeft: '2rem' }}>
                 {/* Vertical line */}
                 <div style={{ position: 'absolute', left: '0.6rem', top: 8, bottom: 8, width: 2, background: 'var(--border)' }} />
-                {stages.map((stage, idx) => {
+                {stages.map((stage) => {
                   const isCurrent = stage.is_current === 1
                   const isDone    = stage.completed === 1
                   const dotColor  = isDone ? '#22c55e' : isCurrent ? 'var(--accent)' : 'var(--border)'

@@ -25,6 +25,7 @@ import {
   resetUser2FA,
 } from '../controllers/adminController'
 import { dsarExport, eraseUserData, getPrivacyNotice } from '../controllers/privacyController'
+import { listSurveysAdmin } from '../controllers/surveyController'
 import { authMiddleware, requireRole } from '../middleware/auth'
 
 const router = Router()
@@ -63,7 +64,8 @@ router.put('/cases/:id/archive',      forceArchiveCase)
 router.get('/reports/users',          getUserReport)
 router.get('/reports/cases',          getCaseReport)
 router.get('/reports/financial',      getFinancialReport)
-router.get('/reports/workload',        getWorkloadReport)
+router.get('/reports/workload',       getWorkloadReport)
+router.get('/reports/surveys',        listSurveysAdmin)
 
 // Data Privacy (RA 10173)
 router.get('/privacy/notice',          getPrivacyNotice)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Download, Users, Briefcase, AlertCircle, X, TrendingUp, Activity, DollarSign, ClipboardList } from 'lucide-react'
+import { BarChart3, Download, Users, Briefcase, AlertCircle, X, TrendingUp, Activity, DollarSign, ClipboardList, Star } from 'lucide-react'
 import { adminApi } from '../services/api'
 
 interface UserReport {
@@ -29,12 +29,28 @@ interface WorkloadReport {
   overdue_deadlines: Array<{ id: number; title: string; due_date: string; deadline_type: string; case_id: number; case_title: string; case_number: string; attorney_name: string; days_overdue: number }>
 }
 
+interface SurveyRow {
+  id: number
+  case_number: string
+  case_title: string
+  client_name: string
+  attorney_name: string
+  satisfaction_rating: number | null
+  communication_rating: number | null
+  outcome_rating: number | null
+  nps_score: number | null
+  comments: string | null
+  responded_at: string | null
+  sent_at: string
+}
+
 export default function AdminReports() {
-  const [tab, setTab] = useState<'users' | 'cases' | 'financial' | 'workload'>('users')
+  const [tab, setTab] = useState<'users' | 'cases' | 'financial' | 'workload' | 'surveys'>('users')
   const [userReport, setUserReport] = useState<UserReport | null>(null)
   const [caseReport, setCaseReport] = useState<CaseReport | null>(null)
   const [financialReport, setFinancialReport] = useState<FinancialReport | null>(null)
   const [workloadReport, setWorkloadReport] = useState<WorkloadReport | null>(null)
+  const [surveyRows, setSurveyRows] = useState<SurveyRow[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -42,9 +58,10 @@ export default function AdminReports() {
     setLoading(true)
     setError('')
 
-    const apiFn = tab === 'users' ? adminApi.userReport()
-                : tab === 'cases' ? adminApi.caseReport()
+    const apiFn = tab === 'users'     ? adminApi.userReport()
+                : tab === 'cases'     ? adminApi.caseReport()
                 : tab === 'financial' ? adminApi.financialReport()
+                : tab === 'surveys'   ? adminApi.surveyReport()
                 : adminApi.workloadReport()
 
     apiFn
@@ -52,6 +69,7 @@ export default function AdminReports() {
         if (tab === 'users') setUserReport(res.data.data)
         else if (tab === 'cases') setCaseReport(res.data.data)
         else if (tab === 'financial') setFinancialReport(res.data.data)
+        else if (tab === 'surveys') setSurveyRows(res.data.data)
         else setWorkloadReport(res.data.data)
       })
       .catch((err: any) => setError(err.response?.data?.message || 'Failed to load.'))
@@ -82,8 +100,18 @@ export default function AdminReports() {
       exportCSV(financialReport.by_month, 'financial_report')
     } else if (tab === 'workload' && workloadReport) {
       exportCSV(workloadReport.attorney_workload, 'workload_report')
+    } else if (tab === 'surveys' && surveyRows) {
+      exportCSV(surveyRows, 'survey_report')
     }
   }
+
+  const Stars = ({ val }: { val: number | null }) => (
+    <span style={{ display: 'inline-flex', gap: 1 }}>
+      {[1,2,3,4,5].map(n => (
+        <Star key={n} size={12} fill={val && n <= val ? '#f59e0b' : 'none'} color={val && n <= val ? '#f59e0b' : 'var(--text-muted)'} />
+      ))}
+    </span>
+  )
 
   /* Simple inline bar helper */
   const Bar = ({ value, max, color }: { value: number; max: number; color: string }) => (
@@ -106,7 +134,7 @@ export default function AdminReports() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)' }}>
-        {(['users', 'cases', 'financial', 'workload'] as const).map(t => (
+        {(['users', 'cases', 'financial', 'workload', 'surveys'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -118,8 +146,8 @@ export default function AdminReports() {
               display: 'flex', alignItems: 'center', gap: '0.5rem', transition: 'color 0.2s',
             }}
           >
-            {t === 'users' ? <Users size={16} /> : t === 'cases' ? <Briefcase size={16} /> : t === 'financial' ? <DollarSign size={16} /> : <ClipboardList size={16} />}
-            {t === 'users' ? 'User Report' : t === 'cases' ? 'Case Report' : t === 'financial' ? 'Financial' : 'Workload'}
+            {t === 'users' ? <Users size={16} /> : t === 'cases' ? <Briefcase size={16} /> : t === 'financial' ? <DollarSign size={16} /> : t === 'workload' ? <ClipboardList size={16} /> : <Star size={16} />}
+            {t === 'users' ? 'User Report' : t === 'cases' ? 'Case Report' : t === 'financial' ? 'Financial' : t === 'workload' ? 'Workload' : 'Surveys'}
           </button>
         ))}
       </div>
@@ -489,6 +517,54 @@ export default function AdminReports() {
                         <td style={{ fontSize: '0.82rem' }}>{d.attorney_name}</td>
                         <td style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{new Date(d.due_date).toLocaleDateString()}</td>
                         <td><span style={{ color: '#dc2626', fontWeight: 700 }}>{d.days_overdue}d</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : tab === 'surveys' && surveyRows ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div className="admin-activity-card">
+            <div className="card-header"><h3><Star size={16} /> Client Satisfaction Surveys</h3></div>
+            <div style={{ padding: 0, overflowX: 'auto' }}>
+              {surveyRows.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem 0' }}>No survey responses yet.</p>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Case</th>
+                      <th>Client</th>
+                      <th>Attorney</th>
+                      <th>Satisfaction</th>
+                      <th>Communication</th>
+                      <th>Outcome</th>
+                      <th>NPS</th>
+                      <th>Comments</th>
+                      <th>Responded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {surveyRows.map(s => (
+                      <tr key={s.id}>
+                        <td style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{s.case_number}</td>
+                        <td style={{ fontWeight: 600 }}>{s.client_name}</td>
+                        <td style={{ fontSize: '0.82rem' }}>{s.attorney_name}</td>
+                        <td><Stars val={s.satisfaction_rating} /></td>
+                        <td><Stars val={s.communication_rating} /></td>
+                        <td><Stars val={s.outcome_rating} /></td>
+                        <td style={{ fontWeight: 700, color: s.nps_score && s.nps_score >= 4 ? '#22c55e' : s.nps_score && s.nps_score <= 2 ? '#dc2626' : 'var(--text)' }}>
+                          {s.nps_score ?? '—'}
+                        </td>
+                        <td style={{ maxWidth: 200, fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.comments ?? ''}>
+                          {s.comments || '—'}
+                        </td>
+                        <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                          {s.responded_at ? new Date(s.responded_at).toLocaleDateString() : <span style={{ fontStyle: 'italic' }}>Pending</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -8,7 +8,7 @@ import {
   Scale, FileText, Clock, MessageSquare, HelpCircle, FolderOpen, Megaphone,
   Search, Plus, Send, Paperclip, X, Loader2, Image, MoreHorizontal,
   Trash2, MapPin, ChevronRight, Briefcase, Calendar, Users, Check, CheckCheck,
-  AlertCircle, DollarSign, Phone, Mail, Building2,
+  DollarSign, Phone, Mail, Building2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'

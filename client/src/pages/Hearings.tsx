@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Scale, ArrowLeft, Plus, Calendar as CalIcon,
   List, MapPin, FileText, Loader2, X, Download,
+  Video, CheckSquare, Square, Trash2, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
@@ -27,6 +28,14 @@ interface Hearing {
   location: string | null
   notes: string | null
   status: 'scheduled' | 'completed' | 'postponed' | 'cancelled'
+}
+
+interface ChecklistItem {
+  id: number
+  hearing_id: number
+  label: string
+  is_done: number
+  done_by_name: string | null
 }
 
 interface CaseOption { id: number; case_number: string; title: string }
@@ -62,6 +71,47 @@ export default function Hearings() {
   const [saving,        setSaving]        = useState(false)
   const [error,         setError]         = useState('')
   const [exportingIcal, setExportingIcal] = useState(false)
+
+  // ── Hearing detail panel ─────────────────────────────────────
+  const [selectedHearing, setSelectedHearing] = useState<Hearing | null>(null)
+  const [checklist,       setChecklist]       = useState<ChecklistItem[]>([])
+  const [ckLoading,       setCkLoading]       = useState(false)
+  const [newItem,         setNewItem]         = useState('')
+  const [addingItem,      setAddingItem]      = useState(false)
+
+  const openDetail = useCallback(async (h: Hearing) => {
+    setSelectedHearing(h)
+    setCkLoading(true)
+    try {
+      const res = await api.get(`/hearings/${h.id}/checklist`)
+      setChecklist(res.data.data)
+    } catch { setChecklist([]) }
+    finally { setCkLoading(false) }
+  }, [])
+
+  const handleToggleItem = async (item: ChecklistItem) => {
+    await api.patch(`/hearings/${selectedHearing!.id}/checklist/${item.id}/toggle`)
+    setChecklist(cl => cl.map(c => c.id === item.id ? { ...c, is_done: c.is_done ? 0 : 1 } : c))
+  }
+
+  const handleAddItem = async () => {
+    if (!newItem.trim()) return
+    setAddingItem(true)
+    try {
+      const res = await api.post(`/hearings/${selectedHearing!.id}/checklist`, { label: newItem.trim() })
+      setChecklist(cl => [...cl, res.data.data])
+      setNewItem('')
+    } catch { /* noop */ }
+    finally { setAddingItem(false) }
+  }
+
+  const handleDeleteItem = async (itemId: number) => {
+    await api.delete(`/hearings/${selectedHearing!.id}/checklist/${itemId}`)
+    setChecklist(cl => cl.filter(c => c.id !== itemId))
+  }
+
+  const jitsiUrl = (h: Hearing) =>
+    `https://meet.jit.si/mgc-${h.case_number.replace(/[^a-zA-Z0-9]/g, '-')}`
 
   const isAttorney = user?.role === 'attorney'
   const canManage = user?.role === 'attorney' || user?.role === 'secretary'
@@ -246,61 +296,288 @@ export default function Hearings() {
           <>
             {/* ── Calendar View ── */}
             {view === 'calendar' && (
-              <div className="rbc-wrap">
-                <Calendar
-                  localizer={localizer}
-                  events={events}
-                  view={calView}
-                  onView={(v) => setCalView(v)}
-                  style={{ height: 600 }}
-                  eventPropGetter={eventStyleGetter}
-                  onSelectEvent={(ev: any) => canManage && openEdit(ev.resource)}
-                  popup
-                />
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                <div className="rbc-wrap" style={{ flex: 1, minWidth: 0 }}>
+                  <Calendar
+                    localizer={localizer}
+                    events={events}
+                    view={calView}
+                    onView={(v) => setCalView(v)}
+                    style={{ height: 600 }}
+                    eventPropGetter={eventStyleGetter}
+                    onSelectEvent={(ev: any) => openDetail(ev.resource)}
+                    popup
+                  />
+                </div>
+
+                {/* Detail panel for calendar view */}
+                {selectedHearing && (
+                  <div style={{
+                    width: 340, flexShrink: 0,
+                    background: 'var(--surface-solid)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)', padding: 20,
+                    position: 'sticky', top: 16,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>
+                          {selectedHearing.title}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                          {selectedHearing.case_number}
+                        </div>
+                      </div>
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+                        onClick={() => setSelectedHearing(null)}
+                      ><X size={16} /></button>
+                    </div>
+
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.7 }}>
+                      <div><CalIcon size={12} style={{ marginRight: 4 }} />{new Date(selectedHearing.scheduled_at).toLocaleString()}</div>
+                      {selectedHearing.location && <div><MapPin size={12} style={{ marginRight: 4 }} />{selectedHearing.location}</div>}
+                    </div>
+
+                    <a
+                      href={jitsiUrl(selectedHearing)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 12px', borderRadius: 8,
+                        background: 'rgba(34,197,94,0.1)', color: '#22c55e',
+                        border: '1px solid rgba(34,197,94,0.2)',
+                        textDecoration: 'none', fontSize: '0.83rem', fontWeight: 600,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Video size={14} /> Join Video Conference (Jitsi)
+                    </a>
+
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 8, color: 'var(--text)' }}>
+                      Preparation Checklist
+                    </div>
+
+                    {ckLoading ? (
+                      <div style={{ textAlign: 'center', padding: 16 }}><Loader2 size={18} className="spin" /></div>
+                    ) : (
+                      <>
+                        {checklist.length === 0 && (
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>No items yet.</p>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                          {checklist.map(item => (
+                            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <button
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: item.is_done ? 'var(--success)' : 'var(--text-muted)', flexShrink: 0 }}
+                                onClick={() => handleToggleItem(item)}
+                              >
+                                {item.is_done ? <CheckSquare size={16} /> : <Square size={16} />}
+                              </button>
+                              <span style={{ flex: 1, fontSize: '0.83rem', color: item.is_done ? 'var(--text-muted)' : 'var(--text)', textDecoration: item.is_done ? 'line-through' : 'none' }}>
+                                {item.label}
+                              </span>
+                              {canManage && (
+                                <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted)' }} onClick={() => handleDeleteItem(item.id)}>
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {canManage && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input
+                              style={{ flex: 1, fontSize: '0.82rem', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)' }}
+                              placeholder="Add checklist item…"
+                              value={newItem}
+                              onChange={e => setNewItem(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+                            />
+                            <button className="btn-primary" style={{ padding: '5px 10px', fontSize: '0.8rem' }} onClick={handleAddItem} disabled={addingItem || !newItem.trim()}>
+                              {addingItem ? <Loader2 size={12} className="spin" /> : '+'}
+                            </button>
+                          </div>
+                        )}
+                        {canManage && (
+                          <button className="btn-sm" style={{ marginTop: 12, width: '100%' }} onClick={() => openEdit(selectedHearing)}>
+                            Edit Hearing
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {/* ── List View ── */}
             {view === 'list' && (
-              <div className="hearings-list">
-                {hearings.length === 0 && (
-                  <p className="empty-state">No hearings scheduled.</p>
-                )}
-                {hearings.map(h => (
-                  <div key={h.id} className="hearing-row">
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                <div className="hearings-list" style={{ flex: 1, minWidth: 0 }}>
+                  {hearings.length === 0 && (
+                    <p className="empty-state">No hearings scheduled.</p>
+                  )}
+                  {hearings.map(h => (
                     <div
-                      className="hearing-status-bar"
-                      style={{ background: STATUS_COLOR[h.status] }}
-                    />
-                    <div className="hearing-info">
-                      <div className="hearing-meta-top">
-                        <span className="hearing-case-num">{h.case_number}</span>
-                        <span className={`hearing-badge status-${h.status}`}>{h.status}</span>
+                      key={h.id}
+                      className={`hearing-row${selectedHearing?.id === h.id ? ' selected' : ''}`}
+                      onClick={() => openDetail(h)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div
+                        className="hearing-status-bar"
+                        style={{ background: STATUS_COLOR[h.status] }}
+                      />
+                      <div className="hearing-info">
+                        <div className="hearing-meta-top">
+                          <span className="hearing-case-num">{h.case_number}</span>
+                          <span className={`hearing-badge status-${h.status}`}>{h.status}</span>
+                        </div>
+                        <strong className="hearing-title">{h.title}</strong>
+                        <div className="hearing-details">
+                          <span>
+                            <CalIcon size={13} />
+                            {new Date(h.scheduled_at).toLocaleString()}
+                          </span>
+                          {h.location && (
+                            <span><MapPin size={13} /> {h.location}</span>
+                          )}
+                          {h.notes && (
+                            <span><FileText size={13} /> {h.notes}</span>
+                          )}
+                        </div>
                       </div>
-                      <strong className="hearing-title">{h.title}</strong>
-                      <div className="hearing-details">
-                        <span>
-                          <CalIcon size={13} />
-                          {new Date(h.scheduled_at).toLocaleString()}
-                        </span>
-                        {h.location && (
-                          <span><MapPin size={13} /> {h.location}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {canManage && (
+                          <div className="hearing-actions" onClick={e => e.stopPropagation()}>
+                            <button className="btn-sm" onClick={() => openEdit(h)}>Edit</button>
+                            {isAttorney && (
+                              <button className="btn-sm danger" onClick={() => handleDelete(h.id)}>Cancel</button>
+                            )}
+                          </div>
                         )}
-                        {h.notes && (
-                          <span><FileText size={13} /> {h.notes}</span>
-                        )}
+                        <ChevronRight size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                       </div>
                     </div>
-                    {canManage && (
-                      <div className="hearing-actions">
-                        <button className="btn-sm" onClick={() => openEdit(h)}>Edit</button>
-                        {isAttorney && (
-                          <button className="btn-sm danger" onClick={() => handleDelete(h.id)}>Cancel</button>
-                        )}
+                  ))}
+                </div>
+
+                {/* ── Detail Panel ─────────────────────────────────── */}
+                {selectedHearing && (
+                  <div style={{
+                    width: 340, flexShrink: 0,
+                    background: 'var(--surface-solid)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)', padding: 20,
+                    position: 'sticky', top: 16,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text)' }}>
+                          {selectedHearing.title}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                          {selectedHearing.case_number}
+                        </div>
                       </div>
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}
+                        onClick={() => setSelectedHearing(null)}
+                      ><X size={16} /></button>
+                    </div>
+
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.7 }}>
+                      <div><CalIcon size={12} style={{ marginRight: 4 }} />{new Date(selectedHearing.scheduled_at).toLocaleString()}</div>
+                      {selectedHearing.location && <div><MapPin size={12} style={{ marginRight: 4 }} />{selectedHearing.location}</div>}
+                    </div>
+
+                    {/* Jitsi Meet Link */}
+                    <a
+                      href={jitsiUrl(selectedHearing)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 12px', borderRadius: 8,
+                        background: 'rgba(34,197,94,0.1)', color: '#22c55e',
+                        border: '1px solid rgba(34,197,94,0.2)',
+                        textDecoration: 'none', fontSize: '0.83rem', fontWeight: 600,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Video size={14} /> Join Video Conference (Jitsi)
+                    </a>
+
+                    {/* Checklist */}
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 8, color: 'var(--text)' }}>
+                      Preparation Checklist
+                    </div>
+
+                    {ckLoading ? (
+                      <div style={{ textAlign: 'center', padding: 16 }}>
+                        <Loader2 size={18} className="spin" />
+                      </div>
+                    ) : (
+                      <>
+                        {checklist.length === 0 && (
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                            No items yet.
+                          </p>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                          {checklist.map(item => (
+                            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <button
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: item.is_done ? 'var(--success)' : 'var(--text-muted)', flexShrink: 0 }}
+                                onClick={() => handleToggleItem(item)}
+                              >
+                                {item.is_done ? <CheckSquare size={16} /> : <Square size={16} />}
+                              </button>
+                              <span style={{
+                                flex: 1, fontSize: '0.83rem',
+                                color: item.is_done ? 'var(--text-muted)' : 'var(--text)',
+                                textDecoration: item.is_done ? 'line-through' : 'none',
+                              }}>
+                                {item.label}
+                              </span>
+                              {canManage && (
+                                <button
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted)' }}
+                                  onClick={() => handleDeleteItem(item.id)}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        {canManage && (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input
+                              style={{
+                                flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)',
+                                borderRadius: 6, padding: '5px 10px', fontSize: '0.82rem', color: 'var(--text)',
+                              }}
+                              placeholder="Add checklist item…"
+                              value={newItem}
+                              onChange={e => setNewItem(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddItem() }}
+                            />
+                            <button
+                              className="btn-primary"
+                              style={{ padding: '5px 10px', fontSize: '0.8rem' }}
+                              onClick={handleAddItem}
+                              disabled={addingItem || !newItem.trim()}
+                            >
+                              {addingItem ? <Loader2 size={13} className="spin" /> : <Plus size={13} />}
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </>

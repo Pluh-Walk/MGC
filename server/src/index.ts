@@ -29,10 +29,12 @@ import settingsRoutes from './routes/settingsRoutes'
 import auditRoutes from './routes/auditRoutes'
 import twoFactorRoutes from './routes/twoFactorRoutes'
 import templateRoutes from './routes/templateRoutes'
+import surveyRoutes from './routes/surveyRoutes'
 import { globalSearch } from './controllers/searchController'
 import { startDeadlineReminder } from './scripts/deadlineReminder'
 import { startHearingReminder } from './scripts/hearingReminder'
 import { startDbBackup } from './scripts/dbBackup'
+import { startWeeklyReport } from './scripts/weeklyReport'
 import { createServer } from 'http'
 import { initSocket } from './socket'
 import pool from './config/db'
@@ -106,6 +108,7 @@ app.use('/api/admin/settings', settingsRoutes)
 app.use('/api/admin/audit', auditRoutes)
 app.use('/api/2fa', twoFactorRoutes)
 app.use('/api/templates', templateRoutes)
+app.use('/api/survey', surveyRoutes)
 app.get('/api/search', globalSearch)
 
 // ─── Health Check ─────────────────────────────────────────
@@ -161,4 +164,5 @@ httpServer.listen(PORT, () => {
   startDeadlineReminder()
   startHearingReminder()
   startDbBackup()
+  startWeeklyReport()
 })

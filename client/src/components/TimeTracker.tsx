@@ -43,7 +43,7 @@ export default function TimeTracker({ caseId, onBillingCreated }: Props) {
     setLoading(true)
     try {
       const res = await timeTrackingApi.list(caseId)
-      const data: TimeEntry[] = res.data.data ?? []
+      const data: TimeEntry[] = (res.data.data ?? []).filter(Boolean)
       setEntries(data)
       // Find any running entry (no ended_at)
       const running = data.find(e => !e.ended_at)
@@ -70,14 +70,12 @@ export default function TimeTracker({ caseId, onBillingCreated }: Props) {
   const handleStart = async () => {
     setStarting(true)
     try {
-      const res = await timeTrackingApi.start(caseId, {
+      await timeTrackingApi.start(caseId, {
         description: description.trim() || undefined,
         is_billable: isBillable,
       })
-      const entry: TimeEntry = res.data.data
-      setActiveEntry(entry)
-      setEntries(prev => [entry, ...prev])
       setDescription('')
+      await loadEntries()
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to start timer.')
     } finally { setStarting(false) }
@@ -86,14 +84,10 @@ export default function TimeTracker({ caseId, onBillingCreated }: Props) {
   const handleStop = async () => {
     if (!activeEntry) return
     setStopping(true)
-    const endedAt = new Date().toISOString()
     try {
-      await timeTrackingApi.stop(caseId, activeEntry.id, endedAt)
-      const durationSec = Math.floor((Date.now() - new Date(activeEntry.started_at).getTime()) / 1000)
-      setEntries(prev => prev.map(e =>
-        e.id === activeEntry.id ? { ...e, ended_at: endedAt, duration_sec: durationSec } : e
-      ))
+      await timeTrackingApi.stop(caseId, activeEntry.id)
       setActiveEntry(null)
+      await loadEntries()
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to stop timer.')
     } finally { setStopping(false) }
@@ -131,7 +125,7 @@ export default function TimeTracker({ caseId, onBillingCreated }: Props) {
   }
 
   const totalBillable = entries
-    .filter(e => e.is_billable && e.duration_sec)
+    .filter(e => e && e.is_billable && e.duration_sec)
     .reduce((s, e) => s + (e.duration_sec ?? 0), 0)
 
   return (

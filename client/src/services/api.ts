@@ -343,9 +343,12 @@ export const hearingsApi = {
 
 // ─── Announcements ────────────────────────────────────────────
 export const announcementsApi = {
-  list:   ()                   => api.get('/announcements'),
-  create: (data: object)       => api.post('/announcements', data),
-  delete: (id: number)         => api.delete(`/announcements/${id}`),
+  list:        () => api.get('/announcements'),
+  create:      (data: object) => api.post('/announcements', data),
+  delete:      (id: number) => api.delete(`/announcements/${id}`),
+  acknowledge: (id: number) => api.post(`/announcements/${id}/acknowledge`),
+  ackStatus:   () => api.get('/announcements/acknowledgment-status'),
+  listAcks:    (id: number) => api.get(`/announcements/${id}/acknowledgments`),
 }
 
 // ─── Messages ───────────────────────────────────────────────────
@@ -436,6 +439,7 @@ export const adminApi = {
   caseReport:      () => api.get('/admin/reports/cases'),
   financialReport: () => api.get('/admin/reports/financial'),
   workloadReport:  () => api.get('/admin/reports/workload'),
+  surveyReport:    () => api.get('/admin/reports/surveys'),
 
   // Impersonation
   impersonateUser: (userId: number) => api.post(`/admin/users/${userId}/impersonate`),

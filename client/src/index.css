@@ -5,6 +5,7 @@
   padding: 0;
 }
 
+/* ── Dark Theme (default) ───────────────────────────── */
 :root {
   --primary:        #1e3a5f;
   --primary-light:  #2d5986;
@@ -25,6 +26,28 @@
   --radius-sm:      8px;
   --shadow:         0 25px 60px rgba(0,0,0,0.5);
   --transition:     0.25s ease;
+  color-scheme:     dark;
+}
+
+/* ── Light Theme ────────────────────────────────────── */
+:root.light-mode {
+  --primary:        #1e3a5f;
+  --primary-light:  #2d5986;
+  --primary-dark:   #122440;
+  --accent:         #b8912c;
+  --accent-light:   #c9a84c;
+  --success:        #16803a;
+  --danger:         #dc2626;
+  --warning:        #d97706;
+  --bg:             #f0f4f8;
+  --surface:        rgba(0,0,0,0.04);
+  --surface-solid:  #ffffff;
+  --surface-2:      #e8eef5;
+  --border:         rgba(0,0,0,0.12);
+  --text:           #1e293b;
+  --text-muted:     #64748b;
+  --shadow:         0 4px 24px rgba(0,0,0,0.12);
+  color-scheme:     light;
 }
 
 html, body, #root {
@@ -45,8 +68,8 @@ select {
   border: 1px solid var(--border);
 }
 select option {
-  background: #1a2744;
-  color: #f1f5f9;
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 /* ── Auth Layout ────────────────────────────────────── */

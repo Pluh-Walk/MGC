@@ -42,7 +42,7 @@ export const addNoteSchema = z.object({
 
 // ─── Billing Entry ────────────────────────────────────────
 export const addBillingSchema = z.object({
-  entry_type:     z.enum(['hourly', 'flat_fee', 'court_fee', 'expense', 'retainer_deduction']),
+  entry_type:     z.enum(['hourly', 'flat_fee', 'court_fee', 'filing_fee', 'expense', 'retainer_deduction', 'other']),
   description:    z.string().min(1, 'description is required.').max(500),
   hours:          z.coerce.number().min(0).max(1000).optional().nullable(),
   rate:           z.coerce.number().min(0).optional().nullable(),

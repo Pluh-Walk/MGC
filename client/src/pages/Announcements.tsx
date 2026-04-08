@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Scale, ArrowLeft, Plus, Megaphone, Trash2, Loader2, X, Briefcase,
+  Scale, ArrowLeft, Plus, Megaphone, Trash2, Loader2, X, Briefcase, CheckCircle,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
@@ -17,6 +17,9 @@ interface Announcement {
   case_title: string | null
   author_name: string
   created_at: string
+  ack_required: number
+  user_acknowledged: number
+  ack_count?: number
 }
 
 interface CaseOption { id: number; case_number: string; title: string }
@@ -29,7 +32,7 @@ export default function Announcements() {
   const [cases,     setCases]     = useState<CaseOption[]>([])
   const [loading,   setLoading]   = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
-  const [form,      setForm]      = useState({ title: '', body: '', case_id: '' })
+  const [form,      setForm]      = useState({ title: '', body: '', case_id: '', ack_required: false })
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState('')
 
@@ -57,7 +60,7 @@ export default function Announcements() {
   }, [canManage])
 
   const openCreate = () => {
-    setForm({ title: '', body: '', case_id: '' })
+    setForm({ title: '', body: '', case_id: '', ack_required: false })
     setError('')
     setModalOpen(true)
   }
@@ -74,6 +77,7 @@ export default function Announcements() {
         title: form.title,
         body: form.body,
         case_id: form.case_id ? Number(form.case_id) : undefined,
+        ack_required: form.ack_required,
       })
       setModalOpen(false)
       await load()
@@ -88,6 +92,15 @@ export default function Announcements() {
     if (!confirm('Delete this announcement?')) return
     await announcementsApi.delete(id)
     setItems(prev => prev.filter(a => a.id !== id))
+  }
+
+  const handleAcknowledge = async (id: number) => {
+    try {
+      await announcementsApi.acknowledge(id)
+      setItems(prev => prev.map(a =>
+        a.id === id ? { ...a, user_acknowledged: 1 } : a
+      ))
+    } catch { /* noop */ }
   }
 
   return (
@@ -125,14 +138,21 @@ export default function Announcements() {
         {loading ? (
           <div className="loading-state">
             <Loader2 size={28} className="spin" />
-            <p>Loading announcements…</p>
+            <p>Loading announcementsâ€¦</p>
           </div>
         ) : items.length === 0 ? (
           <p className="empty-state">No announcements yet.</p>
         ) : (
           <div className="announcements-list">
             {items.map(a => (
-              <div key={a.id} className="announcement-card">
+              <div
+                key={a.id}
+                className="announcement-card"
+                style={a.ack_required && !a.user_acknowledged ? {
+                  borderLeft: '3px solid var(--warning)',
+                  borderLeftColor: 'var(--warning)',
+                } : {}}
+              >
                 <div className="announcement-header">
                   <div className="announcement-meta">
                     {a.case_number ? (
@@ -142,10 +162,24 @@ export default function Announcements() {
                     ) : (
                       <span className="announcement-firm-tag">Firm-wide</span>
                     )}
+                    {a.ack_required === 1 && (
+                      <span style={{
+                        fontSize: '0.72rem', padding: '2px 8px', borderRadius: 999,
+                        background: 'rgba(245,158,11,0.15)', color: 'var(--warning)',
+                        fontWeight: 600,
+                      }}>
+                        Acknowledgment Required
+                      </span>
+                    )}
                     <span className="announcement-author">By {a.author_name}</span>
                     <span className="announcement-date">
                       {new Date(a.created_at).toLocaleDateString()}
                     </span>
+                    {user?.role === 'admin' && a.ack_required === 1 && a.ack_count !== undefined && (
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        {a.ack_count} acknowledgment{a.ack_count === 1 ? '' : 's'}
+                      </span>
+                    )}
                   </div>
                   {(user?.role === 'attorney' || user?.role === 'admin') && (
                     <button
@@ -159,6 +193,28 @@ export default function Announcements() {
                 </div>
                 <h3 className="announcement-title">{a.title}</h3>
                 <p className="announcement-body">{a.body}</p>
+
+                {/* Acknowledge button */}
+                {a.ack_required === 1 && (
+                  <div style={{ marginTop: 10 }}>
+                    {a.user_acknowledged ? (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        fontSize: '0.82rem', color: 'var(--success)',
+                      }}>
+                        <CheckCircle size={14} /> Acknowledged
+                      </span>
+                    ) : (
+                      <button
+                        className="btn-primary"
+                        style={{ fontSize: '0.82rem', padding: '6px 14px' }}
+                        onClick={() => handleAcknowledge(a.id)}
+                      >
+                        <CheckCircle size={14} /> I Acknowledge This
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -179,7 +235,7 @@ export default function Announcements() {
             {error && <p className="form-error">{error}</p>}
 
             <div className="form-group">
-              <label>Case (optional — leave blank for firm-wide)</label>
+              <label>Case (optional â€” leave blank for firm-wide)</label>
               <select
                 value={form.case_id}
                 onChange={e => setForm({ ...form, case_id: e.target.value })}
@@ -187,7 +243,7 @@ export default function Announcements() {
                 <option value="">All clients (firm-wide)</option>
                 {cases.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.case_number} — {c.title}
+                    {c.case_number} â€” {c.title}
                   </option>
                 ))}
               </select>
@@ -207,10 +263,22 @@ export default function Announcements() {
               <label>Body *</label>
               <textarea
                 rows={5}
-                placeholder="Write your announcement…"
+                placeholder="Write your announcementâ€¦"
                 value={form.body}
                 onChange={e => setForm({ ...form, body: e.target.value })}
               />
+            </div>
+
+            <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <input
+                type="checkbox"
+                id="ack-required"
+                checked={form.ack_required}
+                onChange={e => setForm({ ...form, ack_required: e.target.checked })}
+              />
+              <label htmlFor="ack-required" style={{ marginBottom: 0 }}>
+                Require acknowledgment from recipients
+              </label>
             </div>
 
             <div className="modal-footer">
