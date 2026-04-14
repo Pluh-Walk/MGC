@@ -30,6 +30,7 @@ import auditRoutes from './routes/auditRoutes'
 import twoFactorRoutes from './routes/twoFactorRoutes'
 import templateRoutes from './routes/templateRoutes'
 import surveyRoutes from './routes/surveyRoutes'
+import intakeRoutes from './routes/intakeRoutes'
 import { globalSearch } from './controllers/searchController'
 import { startDeadlineReminder } from './scripts/deadlineReminder'
 import { startHearingReminder } from './scripts/hearingReminder'
@@ -109,6 +110,7 @@ app.use('/api/admin/audit', auditRoutes)
 app.use('/api/2fa', twoFactorRoutes)
 app.use('/api/templates', templateRoutes)
 app.use('/api/survey', surveyRoutes)
+app.use('/api/intake', intakeRoutes)
 app.get('/api/search', globalSearch)
 
 // ─── Health Check ─────────────────────────────────────────

@@ -171,6 +171,26 @@ export const messageUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 })
 
+// ─── Intake attachments (client complaint documents, 20 MB) ──
+const intakeStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(process.cwd(), process.env.UPLOAD_DIR || 'uploads', 'intake')
+    fs.mkdirSync(dir, { recursive: true })
+    cb(null, dir)
+  },
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`
+    const ext    = path.extname(safeFilename(file.originalname))
+    cb(null, `${unique}${ext}`)
+  },
+})
+
+export const intakeUpload = multer({
+  storage: intakeStorage,
+  fileFilter,
+  limits: { fileSize: MAX_SIZE_BYTES, files: 10 },
+})
+
 // ─── Expense receipts (5 MB, PDF + images only) ───────────
 const RECEIPT_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 

@@ -374,6 +374,13 @@ export default function ClientDashboard() {
           </div>
 
           <nav className="sidebar-nav">
+            <button className="sidebar-btn" onClick={() => navigate('/intake/select-type')}
+              style={{ background: 'var(--accent)', color: '#000', fontWeight: 700, borderRadius: 'var(--radius-sm)', marginBottom: '0.25rem' }}>
+              <FileText size={17} /> File a Complaint
+            </button>
+            <button className="sidebar-btn" onClick={() => navigate('/intake')}>
+              <Clock size={17} /> My Complaints
+            </button>
             <button className="sidebar-btn" onClick={() => navigate('/cases')}>
               <FolderOpen size={17} /> My Cases
             </button>

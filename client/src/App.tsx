@@ -35,6 +35,11 @@ import AdminAnnouncements from './pages/AdminAnnouncements'
 import Templates from './pages/Templates'
 import AttorneyReports from './pages/AttorneyReports'
 import SurveyPage from './pages/SurveyPage'
+import ClientIntake from './pages/ClientIntake'
+import TortIntake from './pages/TortIntake'
+import ComplaintTypeSelector from './pages/ComplaintTypeSelector'
+import IntakeList from './pages/IntakeList'
+import IntakeQueue from './pages/IntakeQueue'
 import MaintenanceBanner from './components/MaintenanceBanner'
 import GlobalSearch from './components/GlobalSearch'
 import ImpersonationBanner from './components/ImpersonationBanner'
@@ -239,6 +244,48 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['client']}>
                 <AttorneyView />
+              </ProtectedRoute>
+            }
+          />
+          {/* Client self-service intake */}
+          <Route
+            path="/intake/select-type"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <ComplaintTypeSelector />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/civil"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <ClientIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/tort"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <TortIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <IntakeList />
+              </ProtectedRoute>
+            }
+          />
+          {/* Attorney / Secretary intake queue */}
+          <Route
+            path="/intake/queue"
+            element={
+              <ProtectedRoute allowedRoles={['attorney', 'secretary']}>
+                <IntakeQueue />
               </ProtectedRoute>
             }
           />

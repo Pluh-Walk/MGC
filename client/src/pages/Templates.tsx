@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { FileText, Download, Trash2, Upload, Plus, X, Loader2, FolderOpen } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { FileText, Download, Trash2, Upload, Plus, X, Loader2, FolderOpen, Scale, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import SettingsDropdown from '../components/SettingsDropdown'
 import { templatesApi } from '../services/api'
 
 const CATEGORIES = ['all','contract','pleading','motion','letter','affidavit','retainer','other'] as const
@@ -31,6 +33,7 @@ function categoryLabel(cat: string) {
 
 export default function Templates() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState<Category>('all')
@@ -102,9 +105,31 @@ export default function Templates() {
     } catch {}
   }
 
+  const dashPath = user?.role === 'attorney' ? '/dashboard/attorney'
+    : user?.role === 'secretary' ? '/dashboard/secretary'
+    : '/admin'
+
   return (
-    <>
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem' }}>
+    <div className="dashboard">
+      <nav className="dash-nav">
+        <div className="dash-nav-brand">
+          <Scale size={22} className="nav-icon" />
+          MGC Law System
+        </div>
+        <div className="dash-nav-right">
+          <span className={`role-badge ${user?.role}`}>
+            {user?.role === 'attorney' ? 'Attorney' : user?.role === 'secretary' ? 'Secretary' : 'Admin'}
+          </span>
+          <SettingsDropdown />
+        </div>
+      </nav>
+
+      <main className="dash-content">
+        <button className="btn-back" onClick={() => navigate(dashPath)}>
+          <ArrowLeft size={16} /> Back to Dashboard
+        </button>
+
+    <div style={{ marginTop: '1rem' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
@@ -193,6 +218,7 @@ export default function Templates() {
           </div>
         )}
       </div>
+      </main>
 
       {/* Upload Modal */}
       {showUploadModal && (
@@ -247,6 +273,6 @@ export default function Templates() {
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }

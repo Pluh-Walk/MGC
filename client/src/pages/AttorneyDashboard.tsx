@@ -334,6 +334,10 @@ export default function AttorneyDashboard() {
           </div>
 
           <nav className="sidebar-nav">
+            <button className="sidebar-btn" onClick={() => navigate('/intake/queue')}
+              style={{ background: 'var(--primary-light)', color: '#fff', fontWeight: 700, borderRadius: 'var(--radius-sm)', marginBottom: '0.25rem' }}>
+              <FileText size={17} /> Intake Queue
+            </button>
             <button className="sidebar-btn" onClick={() => navigate('/cases')}>
               <Briefcase size={17} /> My Cases
             </button>

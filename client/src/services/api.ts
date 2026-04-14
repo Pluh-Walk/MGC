@@ -333,6 +333,20 @@ export const templatesApi = {
   downloadUrl: (id: number) => `/api/templates/${id}/download?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`,
 }
 
+// ─── Case Intake (self-service complaint submission) ──────────
+export const intakeApi = {
+  submit:    (formData: FormData) =>
+    api.post('/intake', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  verifyCert: (formData: FormData) =>
+    api.post('/intake/verify-barangay-cert', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  list:      (status?: string) => api.get('/intake', { params: status ? { status } : {} }),
+  get:       (id: number) => api.get(`/intake/${id}`),
+  accept:    (id: number) => api.put(`/intake/${id}/accept`, {}),
+  reject:    (id: number, rejection_reason: string) => api.put(`/intake/${id}/reject`, { rejection_reason }),
+  convert:   (id: number) => api.post(`/intake/${id}/convert`, {}),
+  withdraw:  (id: number) => api.delete(`/intake/${id}`),
+}
+
 // ─── Hearings ──────────────────────────────────────────────────
 export const hearingsApi = {
   list:   ()                       => api.get('/hearings'),

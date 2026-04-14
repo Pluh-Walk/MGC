@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { TrendingUp, Clock, DollarSign, AlertTriangle, BarChart3, Download, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { TrendingUp, Clock, DollarSign, AlertTriangle, BarChart3, Download, Loader2, Scale, ArrowLeft } from 'lucide-react'
 import { profileApi } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+import SettingsDropdown from '../components/SettingsDropdown'
 
 interface PerformanceData {
   cases_by_month: Array<{ month: string; opened: number; closed: number }>
@@ -22,6 +25,8 @@ function fmtCurrency(n: number) {
 }
 
 export default function AttorneyReports() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const [data, setData] = useState<PerformanceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -46,7 +51,24 @@ export default function AttorneyReports() {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem' }}>
+    <div className="dashboard">
+      <nav className="dash-nav">
+        <div className="dash-nav-brand">
+          <Scale size={22} className="nav-icon" />
+          MGC Law System
+        </div>
+        <div className="dash-nav-right">
+          <span className={`role-badge ${user?.role}`}>Attorney</span>
+          <SettingsDropdown />
+        </div>
+      </nav>
+
+      <main className="dash-content">
+        <button className="btn-back" onClick={() => navigate('/dashboard/attorney')}>
+          <ArrowLeft size={16} /> Back to Dashboard
+        </button>
+
+    <div style={{ marginTop: '1rem' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
@@ -238,6 +260,8 @@ export default function AttorneyReports() {
             )}
           </>
         )}
+    </div>
+      </main>
     </div>
   )
 }

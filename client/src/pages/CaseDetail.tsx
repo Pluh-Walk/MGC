@@ -1520,16 +1520,14 @@ export default function CaseDetail() {
                     />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="field-group"><label>Invoice No.</label>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
+                  <div className="field-group" style={{ flex: 1 }}><label>Invoice No.</label>
                     <input value={billingForm.invoice_number} onChange={e => setBillingForm(f => ({ ...f, invoice_number: e.target.value }))} />
                   </div>
-                  <div className="field-group" style={{ justifyContent: 'flex-end', paddingTop: '1.5rem' }}>
-                    <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="checkbox" checked={billingForm.is_billed} onChange={e => setBillingForm(f => ({ ...f, is_billed: e.target.checked }))} />
-                      Mark as billed
-                    </label>
-                  </div>
+                  <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', paddingBottom: '0.45rem', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                    <input type="checkbox" checked={billingForm.is_billed} onChange={e => setBillingForm(f => ({ ...f, is_billed: e.target.checked }))} />
+                    Mark as billed
+                  </label>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                   <button className="btn-secondary" onClick={() => setShowBillingForm(false)} disabled={billingSaving}><X size={13} /> Cancel</button>
