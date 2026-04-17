@@ -552,6 +552,34 @@ export const addNote = async (req: Request, res: Response): Promise<void> => {
   }
 }
 
+export const deleteNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user
+    const { id, noteId } = req.params
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT author_id FROM case_notes WHERE id = ? AND case_id = ?`,
+      [noteId, id]
+    )
+    if (!rows.length) {
+      res.status(404).json({ success: false, message: 'Note not found.' })
+      return
+    }
+    // Only the note author or an attorney can delete
+    if (rows[0].author_id !== user.id && user.role !== 'attorney') {
+      res.status(403).json({ success: false, message: 'Not authorized to delete this note.' })
+      return
+    }
+
+    await pool.query(`DELETE FROM case_notes WHERE id = ? AND case_id = ?`, [noteId, id])
+    await audit(req, 'NOTE_DELETED', 'case', Number(id))
+
+    res.json({ success: true, message: 'Note deleted.' })
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message })
+  }
+}
+
 // ─── Get Client List (attorney or secretary — scoped to linked attorney's cases) ─
 export const getClientList = async (req: Request, res: Response): Promise<void> => {
   try {

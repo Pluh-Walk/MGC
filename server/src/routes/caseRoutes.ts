@@ -6,7 +6,7 @@ import {
   getCaseById,
   updateCase,
   deleteCase,
-  addNote,
+  addNote, deleteNote,
   getClientList,
   getCaseDrafts,
   approveCaseDraft,
@@ -86,6 +86,7 @@ router.delete('/:id/legal-hold', requireRole('attorney', 'admin'), liftLegalHold
 
 // Notes (attorney + secretary)
 router.post('/:id/notes', requireRole('attorney', 'secretary'), requireAttorneyScope, validate(addNoteSchema), addNote)
+router.delete('/:id/notes/:noteId', requireRole('attorney', 'secretary'), requireAttorneyScope, deleteNote)
 
 // Export single case detail as HTML (print to PDF)
 router.get('/:caseId/export', requireRole('attorney', 'client', 'admin', 'secretary'), requireAttorneyScope, exportCaseDetail)

@@ -2693,6 +2693,284 @@ select option {
 .doc-meta { font-size: 0.78rem; color: var(--text-muted); text-transform: capitalize; }
 .doc-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
 
+/* ── Party / Co-Counsel Profile Cards ───────────────────── */
+.party-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+.party-profile-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: var(--surface-solid);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.party-profile-card:hover {
+  border-color: rgba(201,168,76,0.2);
+  box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+}
+.party-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  background: #6366f1;
+}
+.party-avatar-client           { background: #16a34a; }
+.party-avatar-opposing_party   { background: #dc2626; }
+.party-avatar-co_plaintiff     { background: #0891b2; }
+.party-avatar-co_defendant     { background: #ea580c; }
+.party-avatar-intervenor       { background: #7c3aed; }
+.party-avatar-prosecutor       { background: #be123c; }
+.party-avatar-public_attorney  { background: #2563eb; }
+.party-avatar-witness          { background: #6b7280; }
+.party-avatar-expert_witness   { background: #0f766e; }
+.party-avatar-judge            { background: #b45309; }
+.party-avatar-court            { background: #374151; }
+.party-avatar-insurance_rep    { background: #0d9488; }
+.party-avatar-attorney         { background: #b8a02e; }
+.party-profile-info { flex: 1; min-width: 0; }
+.party-profile-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+.party-profile-name { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+.party-profile-org {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+.party-profile-contacts { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.party-contact-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.party-profile-notes { font-size: 0.82rem; color: var(--text-muted); margin: 0.35rem 0 0; line-height: 1.5; }
+.party-profile-actions { display: flex; gap: 0.35rem; flex-shrink: 0; align-self: flex-start; }
+
+/* Party type badges */
+.party-type-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+  white-space: nowrap;
+  background: rgba(107,114,128,0.15);
+  color: #9ca3af;
+}
+.party-type-badge.party-type-client           { background: rgba(22,163,74,0.15);   color: #4ade80; }
+.party-type-badge.party-type-opposing_party   { background: rgba(220,38,38,0.15);   color: #f87171; }
+.party-type-badge.party-type-co_plaintiff     { background: rgba(8,145,178,0.15);   color: #22d3ee; }
+.party-type-badge.party-type-co_defendant     { background: rgba(234,88,12,0.15);   color: #fb923c; }
+.party-type-badge.party-type-intervenor       { background: rgba(124,58,237,0.15);  color: #a78bfa; }
+.party-type-badge.party-type-prosecutor       { background: rgba(190,18,60,0.15);   color: #fb7185; }
+.party-type-badge.party-type-public_attorney  { background: rgba(37,99,235,0.15);   color: #60a5fa; }
+.party-type-badge.party-type-witness          { background: rgba(107,114,128,0.15); color: #9ca3af; }
+.party-type-badge.party-type-expert_witness   { background: rgba(15,118,110,0.15);  color: #2dd4bf; }
+.party-type-badge.party-type-judge            { background: rgba(180,83,9,0.15);    color: #fbbf24; }
+.party-type-badge.party-type-court            { background: rgba(55,65,81,0.25);    color: #94a3b8; }
+.party-type-badge.party-type-insurance_rep    { background: rgba(13,148,136,0.15);  color: #34d399; }
+/* Co-Counsel role badges */
+.party-type-badge.cocounsel-role-lead         { background: rgba(184,160,46,0.2);   color: var(--accent); }
+.party-type-badge.cocounsel-role-co_counsel   { background: rgba(37,99,235,0.15);   color: #60a5fa; }
+.party-type-badge.cocounsel-role-supervisor   { background: rgba(124,58,237,0.15);  color: #a78bfa; }
+.party-type-badge.cocounsel-role-associate    { background: rgba(8,145,178,0.15);   color: #22d3ee; }
+.party-type-badge.cocounsel-role-paralegal    { background: rgba(107,114,128,0.15); color: #9ca3af; }
+
+/* ── Related Case Cards ─────────────────────────────────── */
+.relation-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.relation-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: var(--surface-solid);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.relation-card:hover {
+  border-color: rgba(96,165,250,0.3);
+  box-shadow: 0 3px 14px rgba(0,0,0,0.18);
+}
+.relation-card-left { flex: 1; min-width: 0; }
+.relation-case-num {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #60a5fa;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  margin-bottom: 0.2rem;
+  letter-spacing: 0.02em;
+}
+.relation-case-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.relation-badges { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.relation-type-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+  background: rgba(107,114,128,0.15);
+  color: #9ca3af;
+}
+.relation-type-badge.relation-type-consolidated   { background: rgba(37,99,235,0.15);  color: #60a5fa; }
+.relation-type-badge.relation-type-appealed_from  { background: rgba(234,88,12,0.15);  color: #fb923c; }
+.relation-type-badge.relation-type-related_matter { background: rgba(13,148,136,0.15); color: #2dd4bf; }
+.relation-type-badge.relation-type-cross_claim    { background: rgba(124,58,237,0.15); color: #a78bfa; }
+.relation-type-badge.relation-type-counterclaim   { background: rgba(220,38,38,0.15);  color: #f87171; }
+.relation-type-badge.relation-type-companion      { background: rgba(22,163,74,0.15);  color: #4ade80; }
+
+/* ── Deadline Profile Cards ─────────────────────────────── */
+.deadline-cards-list { display: flex; flex-direction: column; gap: 0.65rem; }
+.deadline-profile-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  background: var(--surface-solid);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.deadline-profile-card:hover { border-color: rgba(255,255,255,0.12); box-shadow: 0 3px 14px rgba(0,0,0,0.18); }
+.deadline-status-bar { width: 4px; flex-shrink: 0; align-self: stretch; }
+.deadline-bar-pending   { background: var(--accent); }
+.deadline-bar-overdue   { background: #dc2626; }
+.deadline-bar-completed { background: #22c55e; }
+.deadline-profile-card.deadline-status-completed { opacity: 0.6; }
+.deadline-profile-body {
+  flex: 1;
+  min-width: 0;
+  padding: 0.85rem 0.9rem;
+}
+.deadline-profile-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.3rem;
+}
+.deadline-profile-title { font-size: 0.92rem; font-weight: 600; color: var(--text); flex: 1; min-width: 0; }
+.deadline-profile-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.deadline-due-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.deadline-due-date.overdue-text { color: #f87171; font-weight: 600; }
+.deadline-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.04);
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+}
+/* Deadline type badges */
+.deadline-type-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+  white-space: nowrap;
+  background: rgba(107,114,128,0.15);
+  color: #9ca3af;
+}
+.deadline-type-badge.deadline-type-filing_deadline    { background: rgba(37,99,235,0.15);  color: #60a5fa; }
+.deadline-type-badge.deadline-type-hearing_date       { background: rgba(184,160,46,0.15); color: var(--accent); }
+.deadline-type-badge.deadline-type-trial_date         { background: rgba(220,38,38,0.15);  color: #f87171; }
+.deadline-type-badge.deadline-type-response_deadline  { background: rgba(234,88,12,0.15);  color: #fb923c; }
+.deadline-type-badge.deadline-type-statute_limitations{ background: rgba(190,18,60,0.15);  color: #fb7185; }
+.deadline-type-badge.deadline-type-appeal_deadline    { background: rgba(124,58,237,0.15); color: #a78bfa; }
+.deadline-type-badge.deadline-type-payment_due        { background: rgba(13,148,136,0.15); color: #2dd4bf; }
+.deadline-type-badge.deadline-type-document_submission{ background: rgba(8,145,178,0.15);  color: #22d3ee; }
+.deadline-type-badge.deadline-type-other              { background: rgba(107,114,128,0.15); color: #9ca3af; }
+
+/* ── Task Profile Cards ─────────────────────────────────── */
+.task-cards-list { display: flex; flex-direction: column; gap: 0.65rem; }
+.task-profile-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  background: var(--surface-solid);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.task-profile-card:hover { border-color: rgba(255,255,255,0.12); box-shadow: 0 3px 14px rgba(0,0,0,0.18); }
+.task-profile-card.task-done { opacity: 0.55; }
+.task-priority-bar { width: 4px; flex-shrink: 0; align-self: stretch; }
+.task-bar-critical { background: #dc2626; }
+.task-bar-high     { background: #f59e0b; }
+.task-bar-normal   { background: #3b82f6; }
+.task-bar-low      { background: #6b7280; }
+/* Priority badges */
+.task-priority-badge {
+  display: inline-block;
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+}
+.task-p-critical { background: rgba(220,38,38,0.2);  color: #f87171; }
+.task-p-high     { background: rgba(245,158,11,0.2); color: #fbbf24; }
+.task-p-normal   { background: rgba(59,130,246,0.2); color: #60a5fa; }
+.task-p-low      { background: rgba(107,114,128,0.2);color: #9ca3af; }
+/* Status badges */
+.task-status-badge {
+  display: inline-block;
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  padding: 0.1rem 0.45rem;
+  border-radius: 99px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.task-s-pending     { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+.task-s-in_progress { background: rgba(139,92,246,0.2);  color: #a78bfa; }
+.task-s-done        { background: rgba(34,197,94,0.15);  color: #4ade80; }
+.task-s-cancelled   { background: rgba(107,114,128,0.15);color: #9ca3af; }
+
 /* ── Profile edit input ──────────────────────────────────── */
 .profile-input {
   width: 100%;
@@ -6578,7 +6856,7 @@ select.profile-input option { background: var(--surface-solid); }
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-.inline-edit-form input,
+.inline-edit-form input:not([type='checkbox']),
 .inline-edit-form select {
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.12);
@@ -6590,7 +6868,7 @@ select.profile-input option { background: var(--surface-solid); }
   outline: none;
   transition: border-color 0.15s;
 }
-.inline-edit-form input:focus,
+.inline-edit-form input:not([type='checkbox']):focus,
 .inline-edit-form select:focus {
   border-color: var(--accent);
 }
@@ -6690,6 +6968,14 @@ select.profile-input option { background: var(--surface-solid); }
   display: flex; align-items: center; gap: 10px;
   padding: 7px 10px; cursor: pointer;
   border-bottom: 1px solid var(--border);
+}
+.invoice-entry-row input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 .invoice-entry-row:last-child { border-bottom: none; }
 .invoice-entry-row:hover { background: var(--bg-elevated); }

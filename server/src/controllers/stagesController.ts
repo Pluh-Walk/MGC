@@ -95,11 +95,36 @@ export const initCaseStages = async (req: Request, res: Response): Promise<void>
     const { case_type } = req.body
     const normalised = (case_type || c.case_type || '').toLowerCase()
 
-    // Fetch template stages
-    const [templates] = await pool.query<RowDataPacket[]>(
+    // For civil cases, select the appropriate sub-type template when available.
+    // civil_ejectment  → Rule on Summary Procedure (no discovery)
+    // civil_family     → Family Courts Rules (annulment, legal_separation, support, adoption)
+    // civil            → standard 9-stage civil workflow (all other sub-types)
+    const FAMILY_SUBTYPES = new Set(['annulment', 'legal_separation', 'support', 'adoption'])
+    let templateKey = normalised
+    if (normalised === 'civil') {
+      const [[intake]] = await pool.query<RowDataPacket[]>(
+        `SELECT civil_case_type FROM case_intake_requests WHERE converted_case_id = ? LIMIT 1`,
+        [caseId]
+      )
+      const subType: string = intake?.civil_case_type ?? ''
+      if (subType === 'ejectment') {
+        templateKey = 'civil_ejectment'
+      } else if (FAMILY_SUBTYPES.has(subType)) {
+        templateKey = 'civil_family'
+      }
+    }
+
+    // Fetch template stages; fall back to base case_type if no sub-type template found
+    let [templates] = await pool.query<RowDataPacket[]>(
       `SELECT stage_name, stage_order FROM stage_templates WHERE case_type = ? ORDER BY stage_order`,
-      [normalised]
+      [templateKey]
     )
+    if (!templates.length && templateKey !== normalised) {
+      ;[templates] = await pool.query<RowDataPacket[]>(
+        `SELECT stage_name, stage_order FROM stage_templates WHERE case_type = ? ORDER BY stage_order`,
+        [normalised]
+      )
+    }
 
     if (!templates.length) {
       res.status(422).json({ success: false, message: `No stage template found for case type "${normalised}".` })
@@ -115,7 +140,7 @@ export const initCaseStages = async (req: Request, res: Response): Promise<void>
     const [stages] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM case_stages WHERE case_id = ? ORDER BY stage_order`, [caseId]
     )
-    await audit(req, 'STAGE_INIT', 'case', Number(caseId), `Initialised ${stages.length} stages (${normalised})`)
+    await audit(req, 'STAGE_INIT', 'case', Number(caseId), `Initialised ${stages.length} stages (${templateKey})`)
     res.status(201).json({ success: true, data: stages })
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message })

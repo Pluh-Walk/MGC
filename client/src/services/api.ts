@@ -108,6 +108,8 @@ export const casesApi = {
   delete: (id: number) => api.delete(`/cases/${id}`),
   addNote: (id: number, data: { content: string; is_private: boolean }) =>
     api.post(`/cases/${id}/notes`, data),
+  deleteNote: (id: number, noteId: number) => api.delete(`/cases/${id}/notes/${noteId}`),
+
   clientList: () => api.get('/cases/clients'),
   drafts: () => api.get('/cases/drafts'),
   approveDraft: (id: number) => api.put(`/cases/${id}/approve`, {}),

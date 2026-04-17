@@ -93,10 +93,13 @@ export const updateHearingSchema = z.object({
 
 // ─── Party ────────────────────────────────────────────────
 export const addPartySchema = z.object({
-  name:         z.string().min(1, 'Name is required.').max(200),
-  party_type:   z.enum(['plaintiff','defendant','petitioner','respondent','witness','third_party','other']),
+  fullname:     z.string().min(1, 'Name is required.').max(200),
+  party_type:   z.enum(['plaintiff','defendant','petitioner','respondent','witness','third_party','other',
+                        'opposing_party','co_plaintiff','co_defendant','intervenor','prosecutor','public_attorney']),
+  email:        z.string().email().max(200).optional().nullable(),
+  phone:        z.string().max(50).optional().nullable(),
   address:      z.string().max(500).optional().nullable(),
-  contact:      z.string().max(200).optional().nullable(),
+  organization: z.string().max(200).optional().nullable(),
   notes:        z.string().max(1000).optional().nullable(),
 })
 

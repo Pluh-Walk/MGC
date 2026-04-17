@@ -4,14 +4,15 @@ import {
   Scale, ArrowLeft, FileText, Clock, StickyNote, Upload, Download,
   CheckCircle, AlertCircle, Paperclip, Lock, Globe, Trash2,
   Pencil, CheckCircle2, X, Users, CalendarClock, AlertTriangle, Plus, Loader2, Search,
+  Building2, Mail, Phone, Link2,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import SettingsDropdown from '../components/SettingsDropdown'
 import InvoiceManager from '../components/InvoiceManager'
 import TimeTracker from '../components/TimeTracker'
-import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tagsApi, tasksApi, stagesApi } from '../services/api'
+import { casesApi, documentsApi, partiesApi, deadlinesApi, billingApi, relationsApi, cocounselApi, tasksApi, stagesApi } from '../services/api'
 
-type Tab = 'info' | 'timeline' | 'notes' | 'documents' | 'parties' | 'deadlines' | 'billing' | 'relations' | 'cocounsel' | 'tasks' | 'stages' | 'invoices'
+type Tab = 'info' | 'timeline' | 'documents' | 'parties' | 'billing' | 'relations' | 'cocounsel' | 'stages' | 'invoices'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:    '#a78bfa',
@@ -49,6 +50,9 @@ export default function CaseDetail() {
   const [noteContent, setNoteContent] = useState('')
   const [notePrivate, setNotePrivate] = useState(true)
   const [noteSubmitting, setNoteSubmitting] = useState(false)
+  const [showNotesModal, setShowNotesModal] = useState(false)
+  const [showDeadlinesModal, setShowDeadlinesModal] = useState(false)
+  const [showTasksModal, setShowTasksModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [docVisible, setDocVisible] = useState(false)
   const [editStatus, setEditStatus] = useState('')
@@ -122,14 +126,6 @@ export default function CaseDetail() {
   const [cocounselForm, setCocounselForm] = useState({ attorney_email: '', attorney_id: '', role: 'co_counsel' })
   const [allAttorneys, setAllAttorneys] = useState<any[]>([])
 
-  // Tags state
-  const [caseTags, setCaseTags] = useState<any[]>([])
-  const [allTags, setAllTags] = useState<any[]>([])
-  const [showTagPicker, setShowTagPicker] = useState(false)
-  const [newTagName, setNewTagName] = useState('')
-  const [newTagColor, setNewTagColor] = useState('#6366f1')
-  const [creatingTag, setCreatingTag] = useState(false)
-
   // Document versioning state
   const [expandedDocId, setExpandedDocId] = useState<number | null>(null)
   const [docVersions, setDocVersions] = useState<Record<number, any[]>>({})
@@ -156,14 +152,12 @@ export default function CaseDetail() {
   }
 
   useEffect(() => { fetchCase() }, [id])
+  useEffect(() => { tasksApi.list(Number(id)).then(r => setTasks(r.data.data ?? [])).catch(() => {}) }, [id])
   useEffect(() => { if (activeTab === 'documents') fetchDocs(docSearch || undefined) }, [activeTab])
   useEffect(() => {
     if (activeTab === 'billing') {
       billingApi.list(Number(id)).then(r => { setBillingEntries(r.data.data); setBillingTotal(r.data.total) }).catch(() => {})
       billingApi.retainerSummary(Number(id)).then(r => setRetainerSummary(r.data.data)).catch(() => {})
-    }
-    if (activeTab === 'tasks') {
-      tasksApi.list(Number(id)).then(r => setTasks(r.data.data ?? [])).catch(() => {})
     }
     if (activeTab === 'stages' && !stagesLoaded) {
       stagesApi.list(Number(id)).then(r => { setStages(r.data.data ?? []); setStagesLoaded(true) }).catch(() => {})
@@ -354,44 +348,6 @@ export default function CaseDetail() {
     if (!confirm('Remove this co-counsel?')) return
     await cocounselApi.remove(Number(id), entryId)
     cocounselApi.list(Number(id)).then(r => setCocounsel(r.data.data))
-  }
-
-  // ─── Tag handlers ─────────────────────────────────────────
-  const loadTags = async () => {
-    try {
-      const [caseTagsRes, allTagsRes] = await Promise.all([tagsApi.getCaseTags(Number(id)), tagsApi.listAll()])
-      setCaseTags(caseTagsRes.data.data)
-      setAllTags(allTagsRes.data.data)
-    } catch (err) {
-      console.error('loadTags:', err)
-    }
-  }
-
-  const handleAssignTag = async (tagId: number) => {
-    await tagsApi.assign(Number(id), tagId)
-    loadTags()
-  }
-
-  const handleRemoveTag = async (tagId: number) => {
-    await tagsApi.remove(Number(id), tagId)
-    loadTags()
-  }
-
-  const handleCreateTag = async () => {
-    const name = newTagName.trim()
-    if (!name) return
-    setCreatingTag(true)
-    try {
-      await tagsApi.create({ name, color: newTagColor })
-      setNewTagName('')
-      setNewTagColor('#6366f1')
-      await loadTags()
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to create tag.'
-      alert(msg)
-    } finally {
-      setCreatingTag(false)
-    }
   }
 
   const openEdit = () => {
@@ -624,7 +580,7 @@ export default function CaseDetail() {
 
         {/* Tabs */}
         <div className="tab-bar">
-          {(['info', 'timeline', 'notes', 'documents', 'parties', 'deadlines'] as Tab[]).map((t) => (
+          {(['info', 'timeline', 'documents', 'parties'] as Tab[]).map((t) => (
             <button
               key={t}
               className={`tab-btn${activeTab === t ? ' active' : ''}`}
@@ -632,29 +588,11 @@ export default function CaseDetail() {
             >
               {t === 'info'      && <FileText size={14} />}
               {t === 'timeline'  && <Clock size={14} />}
-              {t === 'notes'     && <StickyNote size={14} />}
               {t === 'documents' && <Paperclip size={14} />}
               {t === 'parties'   && <Users size={14} />}
-              {t === 'deadlines' && (
-                <span style={{ position: 'relative', display: 'inline-flex' }}>
-                  <CalendarClock size={14} />
-                  {data?.deadlines?.filter((d: any) => !d.is_completed && new Date(d.due_date) < new Date()).length > 0 && (
-                    <span style={{ position: 'absolute', top: -4, right: -4, width: 7, height: 7, borderRadius: '50%', background: '#dc2626' }} />
-                  )}
-                </span>
-              )}
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
-          {/* Attorney/secretary/client tasks tab */}
-          <button className={`tab-btn${activeTab === 'tasks' ? ' active' : ''}`} onClick={() => setActiveTab('tasks')}>
-            <CheckCircle size={14} /> Tasks
-            {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length > 0 && (
-              <span style={{ marginLeft: 4, background: '#3b82f6', color: '#fff', borderRadius: 999, fontSize: '0.7rem', padding: '0 5px', lineHeight: '16px', display: 'inline-block' }}>
-                {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length}
-              </span>
-            )}
-          </button>
           {/* Case progress stages */}
           <button className={`tab-btn${activeTab === 'stages' ? ' active' : ''}`} onClick={() => setActiveTab('stages')}>
             Progress
@@ -679,77 +617,59 @@ export default function CaseDetail() {
               ))}
             </>
           )}
-          {/* Tags button (attorney/secretary) */}
-          {(user?.role === 'attorney' || user?.role === 'secretary') && (
-            <button className="btn-small" style={{ marginLeft: 'auto', alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 4, padding: '0.3rem 0.7rem', borderRadius: 6 }}
-              onClick={() => { loadTags(); setShowTagPicker(p => !p) }}>
-              <Plus size={12} /> Tags
-            </button>
-          )}
         </div>
-
-        {/* Tag picker popover */}
-        {showTagPicker && (
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.75rem 1rem', marginBottom: '0.75rem', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <strong style={{ fontSize: '0.87rem' }}>Case Tags</strong>
-              <button className="modal-close" onClick={() => setShowTagPicker(false)}><X size={14} /></button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.5rem' }}>
-              {caseTags.map((t: any) => (
-                <span key={t.id} style={{ background: t.color + '22', color: t.color, border: `1px solid ${t.color}`, borderRadius: 20, padding: '0.15rem 0.6rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {t.name}
-                  <button onClick={() => handleRemoveTag(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.color, padding: 0, lineHeight: 1 }}>×</button>
-                </span>
-              ))}
-              {caseTags.length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No tags assigned.</span>}
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>Add tag:</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.6rem' }}>
-              {allTags.filter(t => !caseTags.find((ct: any) => ct.id === t.id)).map((t: any) => (
-                <button key={t.id} onClick={() => handleAssignTag(t.id)} style={{ background: t.color + '22', color: t.color, border: `1px solid ${t.color}`, borderRadius: 20, padding: '0.15rem 0.6rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  + {t.name}
-                </button>
-              ))}
-              {allTags.filter(t => !caseTags.find((ct: any) => ct.id === t.id)).length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>All tags assigned.</span>}
-            </div>
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '0.6rem', marginTop: '0.2rem' }}>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>Create new tag:</p>
-              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  value={newTagName}
-                  onChange={e => setNewTagName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleCreateTag() }}
-                  placeholder="Tag name"
-                  maxLength={50}
-                  style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.8rem', border: '1px solid #e2e8f0', borderRadius: 6 }}
-                />
-                <input
-                  type="color"
-                  value={newTagColor}
-                  onChange={e => setNewTagColor(e.target.value)}
-                  title="Pick tag color"
-                  style={{ width: 28, height: 28, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer' }}
-                />
-                <button
-                  onClick={handleCreateTag}
-                  disabled={creatingTag || !newTagName.trim()}
-                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem', borderRadius: 6, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', opacity: (creatingTag || !newTagName.trim()) ? 0.5 : 1 }}>
-                  {creatingTag ? '…' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Tab: Info */}
         {activeTab === 'info' && (
           <div className="tab-content">
-            {(user?.role === 'attorney' || user?.role === 'secretary') && !showEdit && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-                <button className="btn-secondary" style={{ fontSize: '0.82rem' }} onClick={openEdit}>
-                  <Pencil size={13} /> Edit Details
+            {!showEdit && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                  <button className="btn-secondary" style={{ fontSize: '0.82rem' }} onClick={openEdit}>
+                    <Pencil size={13} /> Edit Details
+                  </button>
+                )}
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 4 }}
+                  onClick={() => setShowNotesModal(true)}
+                  title="Case Notes"
+                >
+                  <StickyNote size={15} />
+                  {data.notes?.length > 0 && (
+                    <span style={{ background: '#6366f1', color: '#fff', borderRadius: 999, fontSize: '0.7rem', padding: '0 5px', lineHeight: '16px' }}>
+                      {data.notes.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}
+                  onClick={() => setShowDeadlinesModal(true)}
+                  title="Deadlines"
+                >
+                  <CalendarClock size={15} />
+                  {data.deadlines?.filter((d: any) => !d.is_completed && new Date(d.due_date) < new Date()).length > 0 && (
+                    <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#dc2626', border: '1px solid #fff' }} />
+                  )}
+                  {data.deadlines?.length > 0 && (
+                    <span style={{ background: '#f59e0b', color: '#fff', borderRadius: 999, fontSize: '0.7rem', padding: '0 5px', lineHeight: '16px' }}>
+                      {data.deadlines.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}
+                  onClick={() => setShowTasksModal(true)}
+                  title="Tasks"
+                >
+                  <CheckCircle size={15} />
+                  {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length > 0 && (
+                    <span style={{ background: '#3b82f6', color: '#fff', borderRadius: 999, fontSize: '0.7rem', padding: '0 5px', lineHeight: '16px' }}>
+                      {tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length}
+                    </span>
+                  )}
                 </button>
               </div>
             )}
@@ -893,66 +813,6 @@ export default function CaseDetail() {
                         {new Date(e.event_date).toLocaleDateString()} · {e.created_by_name}
                       </span>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab: Notes */}
-        {activeTab === 'notes' && (
-          <div className="tab-content">
-            {(user?.role === 'attorney' || user?.role === 'secretary') && (
-              <div className="note-composer">
-                <textarea
-                  value={noteContent}
-                  onChange={(e) => setNoteContent(e.target.value)}
-                  placeholder="Write a note…"
-                  rows={4}
-                  className="note-textarea"
-                />
-                <div className="note-footer">
-                  {user?.role === 'attorney' ? (
-                    <label className="toggle-row">
-                      {notePrivate ? <Lock size={14} /> : <Globe size={14} />}
-                      <input
-                        type="checkbox"
-                        checked={notePrivate}
-                        onChange={(e) => setNotePrivate(e.target.checked)}
-                      />
-                      {notePrivate ? 'Private (attorney only)' : 'Visible to client'}
-                    </label>
-                  ) : (
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      <Globe size={14} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
-                      Notes are visible to attorney and client
-                    </span>
-                  )}
-                  <button
-                    className="btn-primary"
-                    onClick={handleAddNote}
-                    disabled={noteSubmitting || !noteContent.trim()}
-                  >
-                    {noteSubmitting ? 'Saving…' : 'Add Note'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {data.notes.length === 0 ? (
-              <div className="empty-state"><StickyNote size={36} className="empty-icon" /><p>No notes yet.</p></div>
-            ) : (
-              <div className="notes-list">
-                {data.notes.map((n: any) => (
-                  <div key={n.id} className="note-card">
-                    <div className="note-card-header">
-                      <span className="note-author">{n.author_name}</span>
-                      {n.is_private && (
-                        <span className="note-private-badge"><Lock size={11} /> Private</span>
-                      )}
-                      <span className="note-date">{new Date(n.created_at).toLocaleString()}</span>
-                    </div>
-                    <p className="note-content">{n.content}</p>
                   </div>
                 ))}
               </div>
@@ -1250,133 +1110,34 @@ export default function CaseDetail() {
             {(!data.parties || data.parties.length === 0) ? (
               <div className="empty-state"><Users size={36} className="empty-icon" /><p>No parties recorded yet.</p></div>
             ) : (
-              <div className="parties-list">
-                {data.parties.map((p: any) => (
-                  <div key={p.id} className="party-card">
-                    <div className="party-card-header">
-                      <div>
-                        <span className="party-name">{p.fullname}</span>
-                        <span className="note-private-badge" style={{ marginLeft: '0.5rem', textTransform: 'capitalize' }}>
-                          {p.party_type.replace(/_/g, ' ')}
-                        </span>
-                        {p.organization && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>· {p.organization}</span>}
+              <div className="party-grid">
+                {data.parties.map((p: any) => {
+                  const initials = p.fullname.split(' ').map((n: string) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                  return (
+                    <div key={p.id} className="party-profile-card">
+                      <div className={`party-avatar party-avatar-${p.party_type}`}>{initials}</div>
+                      <div className="party-profile-info">
+                        <div className="party-profile-top">
+                          <span className="party-profile-name">{p.fullname}</span>
+                          <span className={`party-type-badge party-type-${p.party_type}`}>
+                            {p.party_type.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {p.organization && (
+                          <div className="party-profile-org"><Building2 size={11} /> {p.organization}</div>
+                        )}
+                        <div className="party-profile-contacts">
+                          {p.email && <span className="party-contact-item"><Mail size={11} /> {p.email}</span>}
+                          {p.phone && <span className="party-contact-item"><Phone size={11} /> {p.phone}</span>}
+                        </div>
+                        {p.notes && <p className="party-profile-notes">{p.notes}</p>}
                       </div>
                       {(user?.role === 'attorney' || user?.role === 'secretary') && (
-                        <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        <div className="party-profile-actions">
                           <button className="btn-small" onClick={() => openEditParty(p)}><Pencil size={12} /></button>
                           <button className="btn-small btn-danger" onClick={() => handleDeleteParty(p.id)}><Trash2 size={12} /></button>
                         </div>
                       )}
-                    </div>
-                    <div className="note-date">
-                      {p.email && <span>{p.email}</span>}
-                      {p.phone && <span> · {p.phone}</span>}
-                    </div>
-                    {p.notes && <p className="note-content" style={{ marginTop: '0.35rem' }}>{p.notes}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tab: Deadlines */}
-        {activeTab === 'deadlines' && (
-          <div className="tab-content">
-            {(user?.role === 'attorney' || user?.role === 'secretary') && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-                <button className="btn-primary" style={{ fontSize: '0.82rem' }} onClick={() => {
-                  setEditDeadline(null)
-                  setDeadlineForm({ title: '', deadline_type: 'filing_deadline', due_date: '', description: '', reminder_days: 7, notify_client: false })
-                  setShowDeadlineForm(true)
-                }}>
-                  <Plus size={14} /> Add Deadline
-                </button>
-              </div>
-            )}
-
-            {showDeadlineForm && (
-              <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
-                <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>{editDeadline ? 'Edit Deadline' : 'Add Deadline'}</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="field-group">
-                    <label>Title *</label>
-                    <input value={deadlineForm.title} onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))} placeholder="Deadline name" />
-                  </div>
-                  <div className="field-group">
-                    <label>Type</label>
-                    <select value={deadlineForm.deadline_type} onChange={e => setDeadlineForm(f => ({ ...f, deadline_type: e.target.value }))}>
-                      {DEADLINE_TYPES.map(t => (
-                        <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="field-group">
-                    <label>Due Date *</label>
-                    <input type="date" value={deadlineForm.due_date} onChange={e => setDeadlineForm(f => ({ ...f, due_date: e.target.value }))} />
-                  </div>
-                  <div className="field-group">
-                    <label>Remind (days before)</label>
-                    <input type="number" min={1} max={90} value={deadlineForm.reminder_days} onChange={e => setDeadlineForm(f => ({ ...f, reminder_days: Number(e.target.value) }))} />
-                  </div>
-                </div>
-                <div className="field-group">
-                  <label>Description</label>
-                  <textarea value={deadlineForm.description} onChange={e => setDeadlineForm(f => ({ ...f, description: e.target.value }))} rows={2} />
-                </div>
-                <label className="toggle-row" style={{ fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
-                  <input type="checkbox" checked={deadlineForm.notify_client} onChange={e => setDeadlineForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginRight: '0.35rem' }} />
-                  Notify client about this deadline
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                  <button className="btn-secondary" onClick={() => { setShowDeadlineForm(false); setEditDeadline(null) }} disabled={deadlineSaving}>
-                    <X size={13} /> Cancel
-                  </button>
-                  <button className="btn-primary" onClick={handleAddDeadline} disabled={deadlineSaving || !deadlineForm.title.trim() || !deadlineForm.due_date}>
-                    <CheckCircle2 size={13} /> {deadlineSaving ? 'Saving…' : editDeadline ? 'Update' : 'Add Deadline'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {(!data.deadlines || data.deadlines.length === 0) ? (
-              <div className="empty-state"><CalendarClock size={36} className="empty-icon" /><p>No deadlines set yet.</p></div>
-            ) : (
-              <div className="deadlines-list">
-                {data.deadlines.map((d: any) => {
-                  const isOverdue = !d.is_completed && new Date(d.due_date) < new Date()
-                  return (
-                    <div key={d.id} className={`deadline-card${d.is_completed ? ' completed' : isOverdue ? ' overdue' : ''}`}>
-                      <div className="deadline-card-header">
-                        <div>
-                          {isOverdue && <AlertTriangle size={14} style={{ color: '#dc2626', marginRight: 6, verticalAlign: 'text-bottom' }} />}
-                          <span className="party-name" style={{ textDecoration: d.is_completed ? 'line-through' : 'none' }}>{d.title}</span>
-                          <span className="note-private-badge" style={{ marginLeft: '0.5rem', textTransform: 'capitalize' }}>
-                            {d.deadline_type.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                          {!d.is_completed && (user?.role === 'attorney' || user?.role === 'secretary') && (
-                            <button className="btn-small" style={{ color: '#16a34a' }} title="Mark complete" onClick={() => handleCompleteDeadline(d.id)}>
-                              <CheckCircle size={13} />
-                            </button>
-                          )}
-                          {(user?.role === 'attorney' || user?.role === 'secretary') && !d.is_completed && (
-                            <button className="btn-small" onClick={() => openEditDeadline(d)}><Pencil size={12} /></button>
-                          )}
-                          {user?.role === 'attorney' && (
-                            <button className="btn-small btn-danger" onClick={() => handleDeleteDeadline(d.id)}><Trash2 size={12} /></button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="note-date">
-                        Due: <strong style={{ color: isOverdue ? '#dc2626' : 'inherit' }}>{new Date(d.due_date).toLocaleDateString()}</strong>
-                        {d.is_completed && d.completed_by_name && <span> · Completed by {d.completed_by_name}</span>}
-                        {d.notify_client && <span> · <Globe size={11} style={{ verticalAlign: 'text-bottom' }} /> Client notified</span>}
-                      </div>
-                      {d.description && <p className="note-content" style={{ marginTop: '0.35rem' }}>{d.description}</p>}
                     </div>
                   )
                 })}
@@ -1385,6 +1146,7 @@ export default function CaseDetail() {
           </div>
         )}
 
+        {/* Tab: Deadlines */}
         {/* ═══ Tab: Invoices (client view) ══════════════════════ */}
         {activeTab === 'invoices' && (
           <div className="tab-content">
@@ -1693,27 +1455,27 @@ export default function CaseDetail() {
               </div>
             )}
             {relations.length === 0 ? (
-              <div className="empty-state"><CheckCircle size={36} className="empty-icon" /><p>No related cases linked.</p></div>
+              <div className="empty-state"><Link2 size={36} className="empty-icon" /><p>No related cases linked.</p></div>
             ) : (
-              <div className="parties-list">
+              <div className="relation-list">
                 {relations.map((r: any) => (
-                  <div key={r.id} className="party-card">
-                    <div className="party-card-header">
-                      <div>
-                        <span className="mono" style={{ marginRight: 8, color: '#2563eb', cursor: 'pointer' }} onClick={() => navigate(`/cases/${r.related_case_id}`)}>
-                          {r.case_number}
+                  <div key={r.id} className="relation-card" onClick={() => navigate(`/cases/${r.related_case_id}`)}>
+                    <div className="relation-card-left">
+                      <div className="relation-case-num">{r.case_number}</div>
+                      <div className="relation-case-title">{r.title}</div>
+                      <div className="relation-badges">
+                        <span className={`relation-type-badge relation-type-${r.relation_type}`}>
+                          {r.relation_type.replace(/_/g, ' ')}
                         </span>
-                        <span className="party-name">{r.title}</span>
-                        <span className="note-private-badge" style={{ marginLeft: 8, textTransform: 'capitalize' }}>
-                          {r.relation_type.replace(/_/g,' ')}
-                        </span>
-                        <span className="status-badge" style={{ marginLeft: 8 }}>{r.status}</span>
+                        <span className="status-badge">{r.status}</span>
                       </div>
-                      {(user?.role === 'attorney' || user?.role === 'secretary') && (
-                        <button className="btn-small btn-danger" onClick={() => handleDeleteRelation(r.id)}><Trash2 size={12} /></button>
-                      )}
+                      {r.notes && <p className="party-profile-notes">{r.notes}</p>}
                     </div>
-                    {r.notes && <p className="note-content" style={{ marginTop: '0.25rem' }}>{r.notes}</p>}
+                    {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                      <button className="btn-small btn-danger" onClick={e => { e.stopPropagation(); handleDeleteRelation(r.id) }}>
+                        <Trash2 size={12} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1723,105 +1485,6 @@ export default function CaseDetail() {
 
         {/* ═══ Tab: Co-Counsel ══════════════════════════════════════ */}
         {/* ═══ Tab: Tasks ══════════════════════════════════════════ */}
-        {activeTab === 'tasks' && (
-          <div className="tab-content">
-            {(user?.role === 'attorney' || user?.role === 'secretary') && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-                <button className="btn-primary" style={{ fontSize: '0.82rem' }} onClick={() => setShowTaskForm(f => !f)}>
-                  <Plus size={14} /> Add Task
-                </button>
-              </div>
-            )}
-            {showTaskForm && (
-              <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
-                <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>New Task</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="field-group" style={{ gridColumn: '1 / -1' }}>
-                    <label>Title *</label>
-                    <input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" />
-                  </div>
-                  <div className="field-group" style={{ gridColumn: '1 / -1' }}>
-                    <label>Description</label>
-                    <textarea value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Optional details" style={{ resize: 'vertical' }} />
-                  </div>
-                  <div className="field-group">
-                    <label>Due Date</label>
-                    <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} />
-                  </div>
-                  <div className="field-group">
-                    <label>Priority</label>
-                    <select value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
-                      {['low','normal','high','critical'].map(p => (
-                        <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
-                  <button className="btn-secondary" onClick={() => setShowTaskForm(false)} disabled={taskSaving}><X size={13} /> Cancel</button>
-                  <button className="btn-primary" disabled={taskSaving || !taskForm.title.trim()} onClick={async () => {
-                    setTaskSaving(true)
-                    try {
-                      await tasksApi.create(Number(id), { ...taskForm, assigned_to: taskForm.assigned_to ? Number(taskForm.assigned_to) : undefined })
-                      setTaskForm({ title: '', description: '', due_date: '', priority: 'normal', assigned_to: '' })
-                      setShowTaskForm(false)
-                      const r = await tasksApi.list(Number(id))
-                      setTasks(r.data.data ?? [])
-                    } catch {}
-                    setTaskSaving(false)
-                  }}>
-                    <CheckCircle2 size={13} /> {taskSaving ? 'Saving…' : 'Save Task'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {tasks.length === 0 ? (
-              <div className="empty-state"><CheckCircle size={36} className="empty-icon" /><p>No tasks yet.</p></div>
-            ) : (
-              <div className="parties-list">
-                {tasks.map((t: any) => (
-                  <div key={t.id} className="party-card" style={{ opacity: t.status === 'done' || t.status === 'cancelled' ? 0.55 : 1 }}>
-                    <div className="party-card-header">
-                      <div style={{ flex: 1 }}>
-                        <span className="party-name" style={{ textDecoration: t.status === 'done' ? 'line-through' : undefined }}>{t.title}</span>
-                        <span style={{ marginLeft: 8, fontSize: '0.72rem', padding: '2px 7px', borderRadius: 999, fontWeight: 600,
-                          background: t.priority === 'critical' ? '#dc2626' : t.priority === 'high' ? '#f59e0b' : t.priority === 'low' ? '#6b7280' : '#3b82f6',
-                          color: '#fff' }}>{t.priority}</span>
-                        <span style={{ marginLeft: 6, fontSize: '0.72rem', padding: '2px 7px', borderRadius: 999, fontWeight: 600,
-                          background: t.status === 'done' ? '#22c55e' : t.status === 'in_progress' ? '#8b5cf6' : t.status === 'cancelled' ? '#6b7280' : 'var(--bg-card)',
-                          color: t.status === 'done' || t.status === 'in_progress' ? '#fff' : 'var(--text-muted)',
-                          border: '1px solid var(--border)' }}>{t.status.replace(/_/g,' ')}</span>
-                        {t.due_date && (
-                          <div className="note-date" style={{ marginTop: 2, color: new Date(t.due_date) < new Date() && t.status !== 'done' ? '#dc2626' : 'var(--text-muted)' }}>
-                            Due: {new Date(t.due_date).toLocaleDateString('en-PH')}
-                          </div>
-                        )}
-                        {t.assignee_name && <div className="note-date">Assigned to: {t.assignee_name}</div>}
-                        {t.completed_by_name && <div className="note-date">Completed by: {t.completed_by_name}</div>}
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
-                        {t.status !== 'done' && t.status !== 'cancelled' && (user?.role === 'attorney' || user?.role === 'secretary') && (
-                          <button className="btn-small" style={{ color: '#22c55e', borderColor: '#22c55e' }} onClick={async () => {
-                            await tasksApi.complete(Number(id), t.id)
-                            const r = await tasksApi.list(Number(id))
-                            setTasks(r.data.data ?? [])
-                          }}><CheckCircle2 size={14} /></button>
-                        )}
-                        {(user?.role === 'attorney' || user?.role === 'secretary') && (
-                          <button className="btn-small btn-danger" onClick={async () => {
-                            await tasksApi.delete(Number(id), t.id)
-                            setTasks(prev => prev.filter((x: any) => x.id !== t.id))
-                          }}><Trash2 size={12} /></button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── Stages Tab ──────────────────────────────────────────────── */}
         {activeTab === 'stages' && (
           <div className="tab-content">
@@ -1941,29 +1604,372 @@ export default function CaseDetail() {
             {cocounsel.length === 0 ? (
               <div className="empty-state"><Users size={36} className="empty-icon" /><p>No co-counsel assigned.</p></div>
             ) : (
-              <div className="parties-list">
-                {cocounsel.map((c: any) => (
-                  <div key={c.id} className="party-card">
-                    <div className="party-card-header">
-                      <div>
-                        <span className="party-name">{c.fullname}</span>
-                        <span className="note-private-badge" style={{ marginLeft: 8, textTransform: 'capitalize' }}>
-                          {c.role.replace(/_/g,' ')}
-                        </span>
-                        <div className="note-date" style={{ marginTop: 2 }}>{c.email}</div>
+              <div className="party-grid">
+                {cocounsel.map((c: any) => {
+                  const initials = c.fullname.split(' ').map((n: string) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                  return (
+                    <div key={c.id} className="party-profile-card">
+                      <div className="party-avatar party-avatar-attorney">{initials}</div>
+                      <div className="party-profile-info">
+                        <div className="party-profile-top">
+                          <span className="party-profile-name">{c.fullname}</span>
+                          <span className={`party-type-badge cocounsel-role-${c.role}`}>
+                            {c.role.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {c.email && (
+                          <div className="party-profile-contacts">
+                            <span className="party-contact-item"><Mail size={11} /> {c.email}</span>
+                          </div>
+                        )}
                       </div>
                       {user?.role === 'attorney' && (
-                        <button className="btn-small btn-danger" onClick={() => handleRemoveCocounsel(c.id)}><Trash2 size={12} /></button>
+                        <div className="party-profile-actions">
+                          <button className="btn-small btn-danger" onClick={() => handleRemoveCocounsel(c.id)}><Trash2 size={12} /></button>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
         )}
 
       </main>
+
+      {/* Tasks Modal */}
+      {showTasksModal && (
+        <div className="modal-overlay" onClick={() => { setShowTasksModal(false); setShowTaskForm(false) }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 580 }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><CheckCircle size={18} /> Tasks</h3>
+              <button className="modal-close" onClick={() => { setShowTasksModal(false); setShowTaskForm(false) }}><X size={18} /></button>
+            </div>
+            <div className="modal-form">
+              {(user?.role === 'attorney' || user?.role === 'secretary') && !showTaskForm && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                  <button className="btn-primary" style={{ fontSize: '0.82rem' }} onClick={() => setShowTaskForm(true)}>
+                    <Plus size={14} /> Add Task
+                  </button>
+                </div>
+              )}
+              {showTaskForm && (
+                <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
+                  <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>New Task</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+                      <label>Title *</label>
+                      <input value={taskForm.title} onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))} placeholder="Task title" />
+                    </div>
+                    <div className="field-group" style={{ gridColumn: '1 / -1' }}>
+                      <label>Description</label>
+                      <textarea value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="Optional details" style={{ resize: 'vertical' }} />
+                    </div>
+                    <div className="field-group">
+                      <label>Due Date</label>
+                      <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} />
+                    </div>
+                    <div className="field-group">
+                      <label>Priority</label>
+                      <select value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}>
+                        {['low','normal','high','critical'].map(p => (
+                          <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                    <button className="btn-secondary" onClick={() => setShowTaskForm(false)} disabled={taskSaving}><X size={13} /> Cancel</button>
+                    <button className="btn-primary" disabled={taskSaving || !taskForm.title.trim()} onClick={async () => {
+                      setTaskSaving(true)
+                      try {
+                        await tasksApi.create(Number(id), { ...taskForm, assigned_to: taskForm.assigned_to ? Number(taskForm.assigned_to) : undefined })
+                        setTaskForm({ title: '', description: '', due_date: '', priority: 'normal', assigned_to: '' })
+                        setShowTaskForm(false)
+                        const r = await tasksApi.list(Number(id))
+                        setTasks(r.data.data ?? [])
+                      } catch {}
+                      setTaskSaving(false)
+                    }}>
+                      <CheckCircle2 size={13} /> {taskSaving ? 'Saving…' : 'Save Task'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                {tasks.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '1.5rem 0' }}>
+                    <CheckCircle size={32} className="empty-icon" /><p>No tasks yet.</p>
+                  </div>
+                ) : (
+                  <div className="task-cards-list">
+                    {tasks.map((t: any) => {
+                      const isDone = t.status === 'done' || t.status === 'cancelled'
+                      const isOverdue = !isDone && t.due_date && new Date(t.due_date) < new Date()
+                      return (
+                        <div key={t.id} className={`task-profile-card task-priority-${t.priority}${isDone ? ' task-done' : ''}`}>
+                          <div className={`task-priority-bar task-bar-${t.priority}`} />
+                          <div className="deadline-profile-body">
+                            <div className="deadline-profile-top">
+                              <span className="deadline-profile-title" style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none' }}>
+                                {t.title}
+                              </span>
+                              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                <span className={`task-priority-badge task-p-${t.priority}`}>{t.priority}</span>
+                                <span className={`task-status-badge task-s-${t.status}`}>{t.status.replace(/_/g, ' ')}</span>
+                              </div>
+                            </div>
+                            <div className="deadline-profile-meta">
+                              {t.due_date && (
+                                <span className={`deadline-due-date${isOverdue ? ' overdue-text' : ''}`}>
+                                  <CalendarClock size={11} />
+                                  Due: {new Date(t.due_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
+                              {t.assignee_name && <span className="deadline-meta-tag"><Users size={11} /> {t.assignee_name}</span>}
+                              {t.completed_by_name && <span className="deadline-meta-tag"><CheckCircle size={11} /> {t.completed_by_name}</span>}
+                            </div>
+                          </div>
+                          <div className="party-profile-actions">
+                            {!isDone && (user?.role === 'attorney' || user?.role === 'secretary') && (
+                              <button className="btn-small" style={{ color: '#22c55e', borderColor: 'rgba(34,197,94,0.4)' }} onClick={async () => {
+                                await tasksApi.complete(Number(id), t.id)
+                                const r = await tasksApi.list(Number(id))
+                                setTasks(r.data.data ?? [])
+                              }}><CheckCircle2 size={14} /></button>
+                            )}
+                            {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                              <button className="btn-small btn-danger" onClick={async () => {
+                                await tasksApi.delete(Number(id), t.id)
+                                setTasks(prev => prev.filter((x: any) => x.id !== t.id))
+                              }}><Trash2 size={12} /></button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deadlines Modal */}
+      {showDeadlinesModal && (
+        <div className="modal-overlay" onClick={() => { setShowDeadlinesModal(false); setShowDeadlineForm(false); setEditDeadline(null) }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 600 }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><CalendarClock size={18} /> Deadlines</h3>
+              <button className="modal-close" onClick={() => { setShowDeadlinesModal(false); setShowDeadlineForm(false); setEditDeadline(null) }}><X size={18} /></button>
+            </div>
+            <div className="modal-form">
+              {(user?.role === 'attorney' || user?.role === 'secretary') && !showDeadlineForm && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                  <button className="btn-primary" style={{ fontSize: '0.82rem' }} onClick={() => {
+                    setEditDeadline(null)
+                    setDeadlineForm({ title: '', deadline_type: 'filing_deadline', due_date: '', description: '', reminder_days: 7, notify_client: false })
+                    setShowDeadlineForm(true)
+                  }}>
+                    <Plus size={14} /> Add Deadline
+                  </button>
+                </div>
+              )}
+
+              {showDeadlineForm && (
+                <div className="inline-edit-form" style={{ marginBottom: '1rem' }}>
+                  <h4 style={{ marginBottom: '0.75rem', fontWeight: 600 }}>{editDeadline ? 'Edit Deadline' : 'Add Deadline'}</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="field-group">
+                      <label>Title *</label>
+                      <input value={deadlineForm.title} onChange={e => setDeadlineForm(f => ({ ...f, title: e.target.value }))} placeholder="Deadline name" />
+                    </div>
+                    <div className="field-group">
+                      <label>Type</label>
+                      <select value={deadlineForm.deadline_type} onChange={e => setDeadlineForm(f => ({ ...f, deadline_type: e.target.value }))}>
+                        {DEADLINE_TYPES.map(t => (
+                          <option key={t} value={t}>{t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="field-group">
+                      <label>Due Date *</label>
+                      <input type="date" value={deadlineForm.due_date} onChange={e => setDeadlineForm(f => ({ ...f, due_date: e.target.value }))} />
+                    </div>
+                    <div className="field-group">
+                      <label>Remind (days before)</label>
+                      <input type="number" min={1} max={90} value={deadlineForm.reminder_days} onChange={e => setDeadlineForm(f => ({ ...f, reminder_days: Number(e.target.value) }))} />
+                    </div>
+                  </div>
+                  <div className="field-group">
+                    <label>Description</label>
+                    <textarea value={deadlineForm.description} onChange={e => setDeadlineForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+                  </div>
+                  <label className="toggle-row" style={{ fontSize: '0.85rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                    <input type="checkbox" checked={deadlineForm.notify_client} onChange={e => setDeadlineForm(f => ({ ...f, notify_client: e.target.checked }))} style={{ marginRight: '0.35rem' }} />
+                    Notify client about this deadline
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button className="btn-secondary" onClick={() => { setShowDeadlineForm(false); setEditDeadline(null) }} disabled={deadlineSaving}>
+                      <X size={13} /> Cancel
+                    </button>
+                    <button className="btn-primary" onClick={handleAddDeadline} disabled={deadlineSaving || !deadlineForm.title.trim() || !deadlineForm.due_date}>
+                      <CheckCircle2 size={13} /> {deadlineSaving ? 'Saving…' : editDeadline ? 'Update' : 'Add Deadline'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                {(!data.deadlines || data.deadlines.length === 0) ? (
+                  <div className="empty-state" style={{ padding: '1.5rem 0' }}>
+                    <CalendarClock size={32} className="empty-icon" /><p>No deadlines set yet.</p>
+                  </div>
+                ) : (
+                  <div className="deadline-cards-list">
+                    {data.deadlines.map((d: any) => {
+                      const isOverdue = !d.is_completed && new Date(d.due_date) < new Date()
+                      const status = d.is_completed ? 'completed' : isOverdue ? 'overdue' : 'pending'
+                      return (
+                        <div key={d.id} className={`deadline-profile-card deadline-status-${status}`}>
+                          <div className={`deadline-status-bar deadline-bar-${status}`} />
+                          <div className="deadline-profile-body">
+                            <div className="deadline-profile-top">
+                              <span className="deadline-profile-title">
+                                {isOverdue && <AlertTriangle size={13} style={{ color: '#dc2626', marginRight: 4, verticalAlign: 'text-bottom' }} />}
+                                <span style={{ textDecoration: d.is_completed ? 'line-through' : 'none' }}>{d.title}</span>
+                              </span>
+                              <span className={`deadline-type-badge deadline-type-${d.deadline_type}`}>
+                                {d.deadline_type.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <div className="deadline-profile-meta">
+                              <span className={`deadline-due-date${isOverdue ? ' overdue-text' : ''}`}>
+                                <CalendarClock size={11} />
+                                {d.is_completed ? 'Was due' : 'Due'}: {new Date(d.due_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}
+                              </span>
+                              {d.is_completed && d.completed_by_name && (
+                                <span className="deadline-meta-tag"><CheckCircle size={11} /> {d.completed_by_name}</span>
+                              )}
+                              {d.notify_client && (
+                                <span className="deadline-meta-tag"><Globe size={11} /> Client notified</span>
+                              )}
+                            </div>
+                            {d.description && <p className="party-profile-notes">{d.description}</p>}
+                          </div>
+                          <div className="party-profile-actions">
+                            {!d.is_completed && (user?.role === 'attorney' || user?.role === 'secretary') && (
+                              <button className="btn-small" style={{ color: '#22c55e', borderColor: 'rgba(34,197,94,0.4)' }} title="Mark complete" onClick={() => handleCompleteDeadline(d.id)}>
+                                <CheckCircle size={13} />
+                              </button>
+                            )}
+                            {(user?.role === 'attorney' || user?.role === 'secretary') && !d.is_completed && (
+                              <button className="btn-small" onClick={() => { openEditDeadline(d); setShowDeadlineForm(true) }}><Pencil size={12} /></button>
+                            )}
+                            {user?.role === 'attorney' && (
+                              <button className="btn-small btn-danger" onClick={() => handleDeleteDeadline(d.id)}><Trash2 size={12} /></button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {showNotesModal && (
+        <div className="modal-overlay" onClick={() => { setShowNotesModal(false); setNoteContent('') }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><StickyNote size={18} /> Case Notes</h3>
+              <button className="modal-close" onClick={() => { setShowNotesModal(false); setNoteContent('') }}><X size={18} /></button>
+            </div>
+            <div className="modal-form">
+              {(user?.role === 'attorney' || user?.role === 'secretary') && (
+                <div className="note-composer" style={{ marginBottom: '1rem' }}>
+                  <textarea
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    placeholder="Write a note…"
+                    rows={3}
+                    className="note-textarea"
+                  />
+                  <div className="note-footer">
+                    {user?.role === 'attorney' ? (
+                      <label className="toggle-row">
+                        {notePrivate ? <Lock size={14} /> : <Globe size={14} />}
+                        <input
+                          type="checkbox"
+                          checked={notePrivate}
+                          onChange={(e) => setNotePrivate(e.target.checked)}
+                        />
+                        {notePrivate ? 'Private (attorney only)' : 'Visible to client'}
+                      </label>
+                    ) : (
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        <Globe size={14} style={{ verticalAlign: 'text-bottom', marginRight: 4 }} />
+                        Notes are visible to attorney and client
+                      </span>
+                    )}
+                    <button
+                      className="btn-primary"
+                      onClick={handleAddNote}
+                      disabled={noteSubmitting || !noteContent.trim()}
+                    >
+                      {noteSubmitting ? 'Saving…' : 'Add Note'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+                {data.notes.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '1.5rem 0' }}>
+                    <StickyNote size={32} className="empty-icon" /><p>No notes yet.</p>
+                  </div>
+                ) : (
+                  <div className="notes-list">
+                    {data.notes.map((n: any) => (
+                      <div key={n.id} className="note-card">
+                        <div className="note-card-header">
+                          <span className="note-author">{n.author_name}</span>
+                          {n.is_private && (
+                            <span className="note-private-badge"><Lock size={11} /> Private</span>
+                          )}
+                          <span className="note-date">{new Date(n.created_at).toLocaleString()}</span>
+                          {(user?.role === 'attorney' || (user?.role === 'secretary' && n.author_id === user?.id)) && (
+                            <button
+                              className="btn-small btn-danger"
+                              style={{ marginLeft: 'auto', flexShrink: 0 }}
+                              onClick={async () => {
+                                try {
+                                  await casesApi.deleteNote(Number(id), n.id)
+                                  setData((prev: any) => ({ ...prev, notes: prev.notes.filter((x: any) => x.id !== n.id) }))
+                                } catch {}
+                              }}
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                        <p className="note-content">{n.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Outcome Modal — required when closing a case */}
       {showOutcomeModal && (
