@@ -10,7 +10,7 @@ export const exportCases = async (req: Request, res: Response): Promise<void> =>
     if (user.role === 'client') { res.status(403).json({ success: false, message: 'Access denied.' }); return }
 
     const eid = getEffectiveAttorneyId(user)
-    const { format = 'csv', status, priority, case_type } = req.query
+    const { format = 'csv', status, case_type } = req.query
 
     let where = `c.deleted_at IS NULL`
     const params: any[] = []
@@ -19,11 +19,10 @@ export const exportCases = async (req: Request, res: Response): Promise<void> =>
       where += ` AND c.attorney_id = ?`; params.push(eid)
     }
     if (status)    { where += ` AND c.status = ?`;    params.push(status) }
-    if (priority)  { where += ` AND c.priority = ?`;  params.push(priority) }
     if (case_type) { where += ` AND c.case_type = ?`; params.push(case_type) }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT c.case_number, c.title, c.case_type, c.status, c.priority,
+      `SELECT c.case_number, c.title, c.case_type, c.status,
               c.docket_number, c.opposing_party, c.opposing_counsel,
               c.retainer_amount,
               a.fullname AS attorney,

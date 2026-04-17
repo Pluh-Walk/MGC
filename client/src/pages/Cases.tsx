@@ -17,7 +17,6 @@ interface Case {
   title: string
   case_type: string
   status: string
-  priority: string
   filing_date: string | null
   created_at: string
   client_name: string
@@ -45,7 +44,6 @@ const caseSchema = z.object({
   docket_number: z.string().optional(),
   judge_name: z.string().optional(),
   filing_date: z.string().optional(),
-  priority: z.enum(['urgent','high','normal','low']),
   opposing_party: z.string().optional(),
   opposing_counsel: z.string().optional(),
   retainer_amount: z.string().optional(),
@@ -61,14 +59,6 @@ const statusColor: Record<string, string> = {
   archived: '',
 }
 
-// ─── Priority Badge ───────────────────────────────────────
-const priorityColors: Record<string, { bg: string; text: string }> = {
-  urgent: { bg: '#fef2f2', text: '#dc2626' },
-  high:   { bg: '#fff7ed', text: '#ea580c' },
-  normal: { bg: '#f0fdf4', text: '#16a34a' },
-  low:    { bg: '#f8fafc', text: '#64748b' },
-}
-
 export default function Cases() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -78,7 +68,6 @@ export default function Cases() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
   const [caseTypeFilter, setCaseTypeFilter] = useState('')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [showModal, setShowModal] = useState(false)
@@ -94,7 +83,6 @@ export default function Cases() {
     formState: { errors },
   } = useForm<CaseForm>({
     resolver: zodResolver(caseSchema),
-    defaultValues: { priority: 'normal' },
   })
 
   // ── Fetch cases
@@ -104,7 +92,6 @@ export default function Cases() {
       const res = await casesApi.list({
         search,
         status: statusFilter,
-        priority: priorityFilter || undefined,
         case_type: caseTypeFilter || undefined,
         overdue_only: overdueOnly || undefined,
       })
@@ -117,7 +104,7 @@ export default function Cases() {
     }
   }
 
-  useEffect(() => { fetchCases() }, [search, statusFilter, priorityFilter, caseTypeFilter, overdueOnly])
+  useEffect(() => { fetchCases() }, [search, statusFilter, caseTypeFilter, overdueOnly])
 
   // ── Open create modal
   const openCreate = async () => {
@@ -194,7 +181,7 @@ export default function Cases() {
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {canCreate && (
-              <button className="btn-secondary" onClick={() => window.open(casesApi.exportUrl({ status: statusFilter || undefined, priority: priorityFilter || undefined, case_type: caseTypeFilter || undefined }), '_blank')} title="Export as CSV">
+              <button className="btn-secondary" onClick={() => window.open(casesApi.exportUrl({ status: statusFilter || undefined, case_type: caseTypeFilter || undefined }), '_blank')} title="Export as CSV">
                 Export CSV
               </button>
             )}
@@ -225,16 +212,6 @@ export default function Cases() {
               <option value="pending">Pending</option>
               <option value="closed">Closed</option>
               <option value="archived">Archived</option>
-            </select>
-            <ChevronDown size={14} className="select-chevron" />
-          </div>
-          <div className="select-wrapper">
-            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="filter-select">
-              <option value="">All priorities</option>
-              <option value="urgent">Urgent</option>
-              <option value="high">High</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
             </select>
             <ChevronDown size={14} className="select-chevron" />
           </div>
@@ -270,7 +247,6 @@ export default function Cases() {
                   <th>Title</th>
                   <th>Type</th>
                   <th>{user?.role === 'attorney' ? 'Client' : 'Attorney'}</th>
-                  <th>Priority</th>
                   <th>Status</th>
                   <th>Filed</th>
                 </tr>
@@ -307,19 +283,6 @@ export default function Cases() {
                       {c.case_type.replace('_', ' ')}
                     </td>
                     <td>{user?.role === 'attorney' ? c.client_name : c.attorney_name}</td>
-                    <td>
-                      {c.priority && priorityColors[c.priority] ? (
-                        <span className="status-badge" style={{
-                          background: priorityColors[c.priority].bg,
-                          color: priorityColors[c.priority].text,
-                          fontWeight: 600,
-                          textTransform: 'capitalize',
-                        }}>
-                          {c.priority === 'urgent' && <AlertTriangle size={11} style={{ marginRight: 3 }} />}
-                          {c.priority}
-                        </span>
-                      ) : '—'}
-                    </td>
                     <td>
                       <span className={`status-badge ${statusColor[c.status] || ''}`}>
                         {c.status}
@@ -384,15 +347,6 @@ export default function Cases() {
               </div>
 
               <div className="form-row">
-                <div className="form-group">
-                  <label>Priority</label>
-                  <select {...register('priority')}>
-                    <option value="normal">Normal</option>
-                    <option value="low">Low</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
                 <div className="form-group">
                   <label>Filing Date</label>
                   <input type="date" {...register('filing_date')} />

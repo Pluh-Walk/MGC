@@ -37,6 +37,11 @@ import AttorneyReports from './pages/AttorneyReports'
 import SurveyPage from './pages/SurveyPage'
 import ClientIntake from './pages/ClientIntake'
 import TortIntake from './pages/TortIntake'
+import ContractIntake from './pages/ContractIntake'
+import PropertyIntake from './pages/PropertyIntake'
+import FamilyIntake from './pages/FamilyIntake'
+import LaborIntake from './pages/LaborIntake'
+import ProbateIntake from './pages/ProbateIntake'
 import ComplaintTypeSelector from './pages/ComplaintTypeSelector'
 import IntakeList from './pages/IntakeList'
 import IntakeQueue from './pages/IntakeQueue'
@@ -269,6 +274,46 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['client']}>
                 <TortIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/contract"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <ContractIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/property"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <PropertyIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/family"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <FamilyIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/labor"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <LaborIntake />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/intake/new/probate"
+            element={
+              <ProtectedRoute allowedRoles={['client']}>
+                <ProbateIntake />
               </ProtectedRoute>
             }
           />

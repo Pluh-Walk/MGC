@@ -57,7 +57,7 @@ export default function CaseDetail() {
   const [showEdit, setShowEdit] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '', case_type: '', court_name: '', docket_number: '', judge_name: '', filing_date: '',
-    description: '', priority: 'normal', opposing_party: '', opposing_counsel: '', retainer_amount: '',
+    description: '', opposing_party: '', opposing_counsel: '', retainer_amount: '',
   })
   const [editSaving, setEditSaving] = useState(false)
   const [approving, setApproving] = useState(false)
@@ -403,7 +403,6 @@ export default function CaseDetail() {
       judge_name:       data.judge_name || '',
       filing_date:      data.filing_date ? data.filing_date.slice(0, 10) : '',
       description:      data.description || '',
-      priority:         data.priority || 'normal',
       opposing_party:   data.opposing_party || '',
       opposing_counsel: data.opposing_counsel || '',
       retainer_amount:  data.retainer_amount != null ? String(data.retainer_amount) : '',
@@ -774,15 +773,6 @@ export default function CaseDetail() {
                       ))}
                     </select>
                   </div>
-                  <div className="field-group">
-                    <label>Priority</label>
-                    <select value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}>
-                      <option value="urgent">Urgent</option>
-                      <option value="high">High</option>
-                      <option value="normal">Normal</option>
-                      <option value="low">Low</option>
-                    </select>
-                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                   <div className="field-group">
@@ -839,7 +829,6 @@ export default function CaseDetail() {
                     <span style={{ whiteSpace: 'pre-wrap' }}>{data.description}</span>
                   </div>
                 )}
-                <div className="info-item"><label>Priority</label><span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{data.priority || 'Normal'}</span></div>
                 <div className="info-item"><label>Court</label><span>{data.court_name || '—'}</span></div>
                 <div className="info-item"><label>Docket Number</label><span>{data.docket_number || '—'}</span></div>
                 <div className="info-item"><label>Judge</label><span>{data.judge_name || '—'}</span></div>

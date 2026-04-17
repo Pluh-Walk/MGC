@@ -155,6 +155,36 @@ export default function IntakeList() {
                         · {intake.civil_case_type.replace(/_/g, ' ')}
                       </span>
                     )}
+                    {intake.tort_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.tort_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {intake.contract_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.contract_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {intake.property_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.property_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {intake.family_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.family_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {intake.labor_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.labor_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                    {intake.probate_case_type && (
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        · {intake.probate_case_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
                     {intake.claim_amount && (
                       <span style={{
                         fontSize: '0.8rem', fontWeight: 600,
@@ -225,6 +255,54 @@ export default function IntakeList() {
                 {detail.civil_case_type && (
                   <Field label="Civil Case Type" value={detail.civil_case_type.replace(/_/g, ' ')} />
                 )}
+                {detail.tort_case_type && (
+                  <Field label="Tort Sub-type" value={detail.tort_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.contract_case_type && (
+                  <Field label="Contract Dispute Type" value={detail.contract_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.property_case_type && (
+                  <Field label="Property Dispute Type" value={detail.property_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.property_address && (
+                  <Field label="Property Address" value={detail.property_address} multiline />
+                )}
+                {detail.family_case_type && (
+                  <Field label="Family Matter Type" value={detail.family_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.case_type === 'family' && (
+                  <Field label="Mediation Acknowledged" value={detail.mediation_acknowledged ? 'Yes — court-annexed mediation acknowledged' : 'No'} />
+                )}
+                {detail.labor_case_type && (
+                  <Field label="Labor Complaint Type" value={detail.labor_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.date_hired && (
+                  <Field label="Date Hired" value={fmtDate(detail.date_hired)} />
+                )}
+                {detail.date_dismissed && (
+                  <Field label="Date Dismissed" value={fmtDate(detail.date_dismissed)} />
+                )}
+                {detail.monthly_salary && (
+                  <Field label="Monthly Salary" value={`₱${Number(detail.monthly_salary).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} />
+                )}
+                {detail.case_type === 'labor' && (
+                  <Field label="SEnA Acknowledged" value={detail.sena_acknowledged ? 'Yes — SEnA requirement acknowledged' : 'No'} />
+                )}
+                {detail.probate_case_type && (
+                  <Field label="Probate / Estate Type" value={detail.probate_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.deceased_name && (
+                  <Field label="Deceased Name" value={detail.deceased_name} />
+                )}
+                {detail.date_of_death && (
+                  <Field label="Date of Death" value={fmtDate(detail.date_of_death)} />
+                )}
+                {detail.estate_value && (
+                  <Field label="Estimated Estate Value" value={`₱${Number(detail.estate_value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} />
+                )}
+                {detail.case_type === 'probate' && (
+                  <Field label="Special Proceedings Acknowledged" value={detail.probate_acknowledged ? 'Yes — court publication requirement acknowledged' : 'No'} />
+                )}
                 {detail.claim_amount && (
                   <Field
                     label="Amount Claimed"
@@ -236,13 +314,16 @@ export default function IntakeList() {
                 {detail.relief_sought && <Field label="Relief Sought" value={detail.relief_sought} multiline />}
                 {detail.opposing_party && <Field label="Opposing Party" value={detail.opposing_party} />}
                 {detail.incident_date  && <Field label="Date of Incident" value={fmtDate(detail.incident_date)} />}
-                <Field label="Barangay Certificate"
-                  value={
-                    detail.barangay_cert_status === 'verified' ? '✓ Verified'
-                    : detail.barangay_cert_status === 'failed'  ? '✗ Not verified'
-                    : 'Not submitted'
-                  }
-                />
+                {['family', 'labor', 'probate'].includes(detail.case_type)
+                  ? <Field label="Pre-filing Requirement" value="✓ Acknowledged" />
+                  : <Field label="Barangay Certificate"
+                      value={
+                        detail.barangay_cert_status === 'verified' ? '✓ Verified'
+                        : detail.barangay_cert_status === 'failed'  ? '✗ Not verified'
+                        : 'Not submitted'
+                      }
+                    />
+                }
                 {detail.attorney_name && <Field label="Assigned Attorney" value={detail.attorney_name} />}
                 {detail.rejection_reason && (
                   <div style={{ padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8 }}>

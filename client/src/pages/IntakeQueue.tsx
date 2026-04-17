@@ -219,7 +219,11 @@ export default function IntakeQueue() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                    {intake.barangay_cert_status === 'verified' ? (
+                    {['family', 'labor', 'probate'].includes(intake.case_type) ? (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--info, #60a5fa)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <CheckCircle2 size={12} /> Acknowledged
+                      </span>
+                    ) : intake.barangay_cert_status === 'verified' ? (
                       <span style={{ fontSize: '0.75rem', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                         <CheckCircle2 size={12} /> Barangay cert verified
                       </span>
@@ -274,7 +278,9 @@ export default function IntakeQueue() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <StatusBadge status={detail.status} />
-                  {detail.barangay_cert_status === 'verified'
+                  {['family', 'labor', 'probate'].includes(detail.case_type)
+                    ? <span style={{ fontSize: '0.75rem', color: 'var(--info, #60a5fa)' }}>✓ Pre-filing requirement acknowledged</span>
+                    : detail.barangay_cert_status === 'verified'
                     ? <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>✓ Barangay cert verified</span>
                     : detail.barangay_cert_status === 'failed'
                     ? <span style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>✗ Barangay cert not verified</span>
@@ -286,6 +292,54 @@ export default function IntakeQueue() {
                 <DetailRow label="Case Type"     value={CASE_TYPE_LABELS[detail.case_type] ?? detail.case_type} />
                 {detail.civil_case_type && (
                   <DetailRow label="Civil Case Type" value={detail.civil_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.tort_case_type && (
+                  <DetailRow label="Tort Sub-type" value={detail.tort_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.contract_case_type && (
+                  <DetailRow label="Contract Dispute Type" value={detail.contract_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.property_case_type && (
+                  <DetailRow label="Property Dispute Type" value={detail.property_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.property_address && (
+                  <DetailRow label="Property Address" value={detail.property_address} multiline />
+                )}
+                {detail.family_case_type && (
+                  <DetailRow label="Family Matter Type" value={detail.family_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.case_type === 'family' && (
+                  <DetailRow label="Mediation Acknowledged" value={detail.mediation_acknowledged ? 'Yes — client acknowledged court-annexed mediation requirement' : 'No'} />
+                )}
+                {detail.labor_case_type && (
+                  <DetailRow label="Labor Complaint Type" value={detail.labor_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.date_hired && (
+                  <DetailRow label="Date Hired" value={fmtDate(detail.date_hired)} />
+                )}
+                {detail.date_dismissed && (
+                  <DetailRow label="Date Dismissed / Last Day" value={fmtDate(detail.date_dismissed)} />
+                )}
+                {detail.monthly_salary && (
+                  <DetailRow label="Monthly Salary" value={`₱${Number(detail.monthly_salary).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} />
+                )}
+                {detail.case_type === 'labor' && (
+                  <DetailRow label="SEnA Acknowledged" value={detail.sena_acknowledged ? 'Yes — client acknowledged SEnA pre-filing requirement' : 'No'} />
+                )}
+                {detail.probate_case_type && (
+                  <DetailRow label="Probate / Estate Type" value={detail.probate_case_type.replace(/_/g, ' ')} />
+                )}
+                {detail.deceased_name && (
+                  <DetailRow label="Deceased Name" value={detail.deceased_name} />
+                )}
+                {detail.date_of_death && (
+                  <DetailRow label="Date of Death" value={fmtDate(detail.date_of_death)} />
+                )}
+                {detail.estate_value && (
+                  <DetailRow label="Estimated Estate Value" value={`₱${Number(detail.estate_value).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`} />
+                )}
+                {detail.case_type === 'probate' && (
+                  <DetailRow label="Special Proceedings Acknowledged" value={detail.probate_acknowledged ? 'Yes — client acknowledged court publication requirement' : 'No'} />
                 )}
                 {detail.claim_amount && (
                   <DetailRow

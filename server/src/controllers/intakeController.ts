@@ -112,6 +112,12 @@ export const submitIntake = async (req: Request, res: Response): Promise<void> =
     const user = (req as any).user
     const {
       case_type, civil_case_type, claim_amount,
+      tort_case_type,
+      contract_case_type,
+      property_case_type, property_address,
+      family_case_type, mediation_acknowledged,
+      labor_case_type, date_hired, date_dismissed, monthly_salary, sena_acknowledged,
+      probate_case_type, deceased_name, date_of_death, estate_value, probate_acknowledged,
       subject, narration, legal_basis, relief_sought,
       opposing_party, incident_date, preferred_attorney,
       barangay_cert_path, barangay_cert_ocr_text,
@@ -123,23 +129,45 @@ export const submitIntake = async (req: Request, res: Response): Promise<void> =
       return
     }
 
-    const ALLOWED_TYPES = ['civil', 'tort']
+    const ALLOWED_TYPES = ['civil', 'tort', 'contract', 'property', 'family', 'labor', 'probate']
     if (!ALLOWED_TYPES.includes(case_type)) {
       cleanupFiles(files)
-      res.status(400).json({ success: false, message: 'Self-service intake is currently only available for civil and tort cases. For other case types, please contact the office directly.' })
+      res.status(400).json({ success: false, message: 'Self-service intake is not available for this case type. Please contact the office directly.' })
       return
     }
 
-    // Barangay Conciliation Certificate is required
-    if (!barangay_cert_path?.trim()) {
+    // Barangay cert only required for standard civil/tort/contract/property cases
+    const BARANGAY_REQUIRED = new Set(['civil', 'tort', 'contract', 'property'])
+    if (BARANGAY_REQUIRED.has(case_type) && !barangay_cert_path?.trim()) {
       cleanupFiles(files)
       res.status(400).json({ success: false, message: 'A verified Barangay Conciliation Certificate is required before submitting a complaint.' })
       return
     }
 
-    const hasCert = true
-    const certStatus = 'verified'
-    const barangayDone = 1
+    // Per-type acknowledgment checks for alternative pre-filing flow
+    if (case_type === 'family' && mediation_acknowledged !== '1') {
+      cleanupFiles(files)
+      res.status(400).json({ success: false, message: 'You must acknowledge the Family Court mandatory mediation requirement before submitting.' })
+      return
+    }
+    if (case_type === 'labor' && sena_acknowledged !== '1') {
+      cleanupFiles(files)
+      res.status(400).json({ success: false, message: 'You must acknowledge the SEnA (Single Entry Approach) pre-filing requirement before submitting.' })
+      return
+    }
+    if (case_type === 'probate' && probate_acknowledged !== '1') {
+      cleanupFiles(files)
+      res.status(400).json({ success: false, message: 'You must acknowledge the special proceedings notice before submitting.' })
+      return
+    }
+    if (case_type === 'probate' && !deceased_name?.trim()) {
+      cleanupFiles(files)
+      res.status(400).json({ success: false, message: 'The name of the deceased is required for probate / estate matters.' })
+      return
+    }
+
+    const certStatus  = BARANGAY_REQUIRED.has(case_type) ? 'verified' : 'none'
+    const barangayDone = BARANGAY_REQUIRED.has(case_type) ? 1 : 0
 
     // Verify all uploaded files pass magic-byte check
     for (const file of files) {
@@ -154,22 +182,43 @@ export const submitIntake = async (req: Request, res: Response): Promise<void> =
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO case_intake_requests
          (client_id, case_type, civil_case_type, claim_amount,
+          tort_case_type, contract_case_type,
+          property_case_type, property_address,
+          family_case_type, mediation_acknowledged,
+          labor_case_type, date_hired, date_dismissed, monthly_salary, sena_acknowledged,
+          probate_case_type, deceased_name, date_of_death, estate_value, probate_acknowledged,
           subject, narration, legal_basis, relief_sought,
           opposing_party, incident_date, preferred_attorney,
           barangay_done, barangay_cert_path, barangay_cert_status, barangay_cert_ocr_text)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.id, case_type,
-        civil_case_type?.trim() || null,
+        civil_case_type?.trim()    || null,
         claim_amount ? parseFloat(claim_amount) : null,
+        tort_case_type?.trim()     || null,
+        contract_case_type?.trim() || null,
+        property_case_type?.trim() || null,
+        property_address?.trim()   || null,
+        family_case_type?.trim()   || null,
+        mediation_acknowledged === '1' ? 1 : 0,
+        labor_case_type?.trim()    || null,
+        date_hired     || null,
+        date_dismissed || null,
+        monthly_salary ? parseFloat(monthly_salary) : null,
+        sena_acknowledged === '1' ? 1 : 0,
+        probate_case_type?.trim()  || null,
+        deceased_name?.trim()      || null,
+        date_of_death  || null,
+        estate_value ? parseFloat(estate_value) : null,
+        probate_acknowledged === '1' ? 1 : 0,
         subject.trim(), narration.trim(),
-        legal_basis?.trim() || null, relief_sought?.trim() || null,
+        legal_basis?.trim()    || null, relief_sought?.trim() || null,
         opposing_party?.trim() || null, incident_date || null,
         preferred_attorney ? Number(preferred_attorney) : null,
         barangayDone,
-        barangay_cert_path?.trim() || null,
+        barangay_cert_path?.trim()      || null,
         certStatus,
-        barangay_cert_ocr_text?.trim() || null,
+        barangay_cert_ocr_text?.trim()  || null,
       ]
     )
     const intakeId = result.insertId
@@ -248,6 +297,11 @@ export const listIntakes = async (req: Request, res: Response): Promise<void> =>
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT i.id, i.case_type, i.civil_case_type, i.claim_amount,
+              i.tort_case_type, i.contract_case_type,
+              i.property_case_type, i.property_address,
+              i.family_case_type, i.mediation_acknowledged,
+              i.labor_case_type, i.date_hired, i.date_dismissed, i.monthly_salary, i.sena_acknowledged,
+              i.probate_case_type, i.deceased_name, i.date_of_death, i.estate_value, i.probate_acknowledged,
               i.subject, i.status, i.opposing_party,
               i.barangay_done, i.barangay_cert_status, i.incident_date, i.submitted_at, i.reviewed_at,
               i.rejection_reason, i.converted_case_id,
@@ -436,8 +490,8 @@ export const convertIntake = async (req: Request, res: Response): Promise<void> 
     const [caseResult] = await conn.query<ResultSetHeader>(
       `INSERT INTO cases
          (case_number, title, description, case_type, client_id, attorney_id,
-          status, priority, opposing_party, filing_date)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', 'normal', ?, CURDATE())`,
+          status, opposing_party, filing_date)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, CURDATE())`,
       [
         case_number,
         intake.subject,

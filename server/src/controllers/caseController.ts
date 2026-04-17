@@ -18,7 +18,7 @@ export const createCase = async (req: Request, res: Response): Promise<void> => 
     const user = (req as any).user
     const {
       title, case_type, client_id, court_name, judge_name, filing_date,
-      description, docket_number, priority, opposing_party, opposing_counsel, retainer_amount,
+      description, docket_number, opposing_party, opposing_counsel, retainer_amount,
     } = req.body
 
     if (!title || !case_type || !client_id) {
@@ -38,13 +38,13 @@ export const createCase = async (req: Request, res: Response): Promise<void> => 
       `INSERT INTO cases
          (case_number, title, description, case_type, client_id, attorney_id,
           court_name, docket_number, judge_name, filing_date, status, drafted_by,
-          priority, opposing_party, opposing_counsel, retainer_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          opposing_party, opposing_counsel, retainer_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         case_number, title, description || null, case_type, client_id, attorney_id,
         court_name || null, docket_number || null, judge_name || null, filing_date || null,
         status, drafted_by,
-        priority || 'normal', opposing_party || null, opposing_counsel || null,
+        opposing_party || null, opposing_counsel || null,
         retainer_amount || null,
       ]
     )
@@ -176,7 +176,7 @@ export const approveCaseDraft = async (req: Request, res: Response): Promise<voi
 export const getCases = async (req: Request, res: Response): Promise<void> => {
   try {
     const user = (req as any).user
-    const { status, search, page = 1, limit = 20, priority, case_type, overdue_only } = req.query
+    const { status, search, page = 1, limit = 20, case_type, overdue_only } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
     const scope = getCaseScope(user)
@@ -192,10 +192,6 @@ export const getCases = async (req: Request, res: Response): Promise<void> => {
       baseWhere += ' AND c.status = ?'
       params.push(status)
     }
-    if (priority) {
-      baseWhere += ' AND c.priority = ?'
-      params.push(priority)
-    }
     if (case_type) {
       baseWhere += ' AND c.case_type = ?'
       params.push(case_type)
@@ -210,7 +206,7 @@ export const getCases = async (req: Request, res: Response): Promise<void> => {
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT c.id, c.case_number, c.title, c.case_type, c.status, c.priority,
+      `SELECT c.id, c.case_number, c.title, c.case_type, c.status,
               c.filing_date, c.created_at, c.outcome,
               cl.fullname AS client_name, at.fullname AS attorney_name,
               (
@@ -226,7 +222,6 @@ export const getCases = async (req: Request, res: Response): Promise<void> => {
        LEFT JOIN users at ON at.id = c.attorney_id
        WHERE ${baseWhere}
        ORDER BY
-         FIELD(c.priority,'urgent','high','normal','low'),
          c.created_at DESC
        LIMIT ? OFFSET ?`,
       [...params, Number(limit), offset]
@@ -353,7 +348,7 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
     const { id } = req.params
     const {
       title, case_type, status, court_name, docket_number, judge_name, filing_date,
-      description, priority, opposing_party, opposing_counsel, outcome, outcome_notes, retainer_amount,
+      description, opposing_party, opposing_counsel, outcome, outcome_notes, retainer_amount,
     } = req.body
 
     const [existing] = await pool.query<RowDataPacket[]>(
@@ -428,7 +423,7 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
     }
 
     await pool.query(
-      `UPDATE cases SET title=?, description=?, case_type=?, status=?, priority=?,
+      `UPDATE cases SET title=?, description=?, case_type=?, status=?,
                         court_name=?, docket_number=?, judge_name=?, filing_date=?,
                         opposing_party=?, opposing_counsel=?, retainer_amount=?,
                         outcome=?, outcome_notes=?,
@@ -439,7 +434,6 @@ export const updateCase = async (req: Request, res: Response): Promise<void> => 
         description ?? existing[0].description,
         case_type || existing[0].case_type,
         newStatus,
-        priority || existing[0].priority,
         court_name ?? existing[0].court_name,
         docket_number ?? existing[0].docket_number,
         judge_name ?? existing[0].judge_name,

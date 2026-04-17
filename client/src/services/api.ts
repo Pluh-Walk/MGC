@@ -100,7 +100,7 @@ api.interceptors.response.use(
 
 // ─── Cases ────────────────────────────────────────────────
 export const casesApi = {
-  list: (params?: { status?: string; search?: string; page?: number; priority?: string; case_type?: string; overdue_only?: boolean }) =>
+  list: (params?: { status?: string; search?: string; page?: number; case_type?: string; overdue_only?: boolean }) =>
     api.get('/cases', { params }),
   get: (id: number) => api.get(`/cases/${id}`),
   create: (data: object) => api.post('/cases', data),
@@ -111,7 +111,7 @@ export const casesApi = {
   clientList: () => api.get('/cases/clients'),
   drafts: () => api.get('/cases/drafts'),
   approveDraft: (id: number) => api.put(`/cases/${id}/approve`, {}),
-  exportUrl: (params?: { status?: string; priority?: string; case_type?: string }) => {
+  exportUrl: (params?: { status?: string; case_type?: string }) => {
     const token = localStorage.getItem('token') ?? ''
     const q = new URLSearchParams({ format: 'csv', token, ...params as any }).toString()
     return `/api/cases/export?${q}`
